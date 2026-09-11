@@ -349,6 +349,33 @@ pub struct MtCfg {
     /// punctuation and a higher error rate. Turn this off to go back to one
     /// translation per line, arriving when the line is settled.
     pub draft_from_fast_lane: bool,
+    /// Translate a sentence that has ended without waiting for the line to.
+    ///
+    /// `draft_from_fast_lane` is early by the length of one endpoint: it hands
+    /// NLLB the sentence while `endpoint_silence_s` counts out the quiet. That
+    /// only helps a speaker who pauses. Task 1.25's E2 measured what happens to
+    /// one who does not: on a clip at 1.5x speed the fast lane's own restored
+    /// full stop is stable a **median 3.52 s, p90 6.72 s** before the line it
+    /// sits in closes, and on the user's own recording 1.92 s. That wait is the
+    /// complaint this whole task came from -- "講太快時來不及顯示翻譯".
+    ///
+    /// So when a full stop inside the open line has survived two consecutive
+    /// hypotheses and has a word decoded after it, the prefix up to it is
+    /// translated and shown as a draft. The line is **not** cut: segmentation,
+    /// the accurate lane's window, and every deterministic number in the eval
+    /// harness are untouched, which is what separates this from stage S2.
+    ///
+    /// What it costs, and why it is bounded. The one MT thread cannot be
+    /// pre-empted once a pass starts, so a mid-line draft can delay the settled
+    /// translation by that pass -- the same bound `draft_from_fast_lane`
+    /// already carries, and for the same reason `drop_superseded_drafts` keeps
+    /// only the newest draft still waiting. The Chinese row is also replaced
+    /// once more per line than before.
+    ///
+    /// Needs `draft_from_fast_lane` (it is the same draft path) and
+    /// `[asr.fast] punctuation` (without restored marks there is no boundary to
+    /// find). With either off it simply never fires.
+    pub draft_mid_line: bool,
 }
 
 impl Default for AudioCfg {
@@ -404,6 +431,7 @@ impl Default for MtCfg {
             trim_final_stop: false,
             threads: 0,
             draft_from_fast_lane: true,
+            draft_mid_line: true,
         }
     }
 }

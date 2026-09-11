@@ -29,8 +29,44 @@
 //! behaviour. A false one is a fragment on the bar, a short line for
 //! `li_stream::merge::decide` to trip its guards on, and a clause handed to
 //! NLLB with its subject cut off.
+//!
+//! ## E2 — and how much earlier
+//!
+//! Being right is necessary and not sufficient. A boundary the punctuator only
+//! finds at the same moment the endpoint detector fires buys nothing, and the
+//! plan's own gate says so: **median `t_close − t_decide` below 1.0 s and
+//! neither the early translation nor stage S2 is worth building.**
+//!
+//! Until now that number had never been measured. The 2.88 s median from the
+//! user's transcripts is whisper's hindsight — it saw the whole utterance
+//! before deciding, which a streaming punctuator cannot. So [`Watch`] runs the
+//! punctuator over **every fast-lane partial** and records, per boundary:
+//!
+//! * `t_close − t_stable` — **E2 proper**: the wait the line would have been
+//!   spared. `t_close` is the audio position at which the fast lane's `Final`
+//!   actually arrived, so this is measured against what happens today, trailing
+//!   silence and all.
+//! * `t_close − t_first` — the same with no stability rule at all. The gap
+//!   between the two is what the rule costs.
+//! * `t_stable − t_boundary` — how long after the word itself the decision
+//!   could be taken. If this routinely exceeds `endpoint_silence_s` (0.6 s) the
+//!   endpoint detector would have got there first and the feature only rescues
+//!   runaway lines.
+//! * **flaps** — how many times the mark appeared and vanished again before the
+//!   line closed. This is the data the stability thresholds should be read
+//!   from, rather than guessed at by analogy with `SPECULATE_AFTER`.
+//!
+//! Every time here is **audio time**, never the wall clock: the question is
+//! when the information arrived, and a clock would make the answer depend on
+//! how fast this machine ran the file.
+//!
+//! The population is the fast lane's *own* inner predictions at close time —
+//! not whisper's boundaries — because those are exactly the cuts a semantic
+//! segmenter would act on. Whether they deserve to be trusted is the precision
+//! table's question; this one asks only how much sooner they were there.
 
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -38,7 +74,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use li_asr::{DeviceRequest, LaneSpec, punct::OnlinePunct, window::Ring};
 use li_audio::file::FileSource;
-use li_types::AsrEvent;
+use li_types::{AsrEvent, Word};
 
 use crate::metrics::{self, Op};
 
@@ -205,7 +241,9 @@ fn go_text(args: &Args) -> Result<()> {
             ms,
         });
     }
-    report(args, &utts, punct.mismatches());
+    // No partials on this path, so no E2: `--text` has no audio timeline to
+    // measure one against.
+    report(args, &utts, punct.mismatches(), &Watch::default());
     Ok(())
 }
 
@@ -248,6 +286,7 @@ async fn go(args: Args) -> Result<()> {
     let mut samples: u64 = 0;
     let mut ring = Ring::default();
     let mut out: Vec<Utterance> = Vec::new();
+    let mut watch = Watch::default();
 
     while let Some(frame) = rx.recv().await {
         let t_origin = Duration::from_secs_f64(samples as f64 / SAMPLE_RATE);
@@ -256,6 +295,10 @@ async fn go(args: Args) -> Result<()> {
         ring.push(&frame.pcm);
 
         for ev in fast.feed(&frame.pcm, t_origin).await? {
+            // The fast lane's partials carry no word times -- the one thing
+            // this tool needs that the pipeline does not hand it -- but they do
+            // carry the text, and `now` says where in the audio it arrived.
+            // That is all E2 asks for.
             let AsrEvent::Final {
                 words,
                 t_start,
@@ -263,6 +306,10 @@ async fn go(args: Args) -> Result<()> {
                 ..
             } = ev
             else {
+                let AsrEvent::Partial { text, .. } = ev else {
+                    unreachable!("there are two variants")
+                };
+                watch.observe(&text, now, &mut punct)?;
                 continue;
             };
             if words.is_empty() {
@@ -271,6 +318,7 @@ async fn go(args: Args) -> Result<()> {
             let started = Instant::now();
             let punctuated = punct.restore_words(&words)?;
             let ms = started.elapsed().as_secs_f64() * 1e3;
+            watch.close(&punctuated, now);
 
             // The same window `li_core::Engine` gives whisper, by construction.
             let (pcm, a) = ring.cut(t_start, t_end.min(now));
@@ -295,8 +343,162 @@ async fn go(args: Args) -> Result<()> {
         }
     }
 
-    report(&args, &out, punct.mismatches());
+    report(&args, &out, punct.mismatches(), &watch);
     Ok(())
+}
+
+/// One boundary the punctuator saw inside a line that was still open.
+struct Timing {
+    /// Audio time of the first partial whose punctuation showed it.
+    first: Duration,
+    /// Audio time at which it satisfied the stability rule, if it ever did.
+    stable: Option<Duration>,
+    /// How many times it went away again after having been seen.
+    flaps: usize,
+    /// Whether the run just processed still showed it, so a disappearance is
+    /// counted once rather than once per partial.
+    present: bool,
+    /// Consecutive runs showing it.
+    streak: usize,
+}
+
+/// What one closed line contributed to E2. One row per inner boundary.
+struct Early {
+    /// `t_close - t_stable`: the wait the line would have been spared.
+    saved: Option<f64>,
+    /// The same from first sight, with no stability rule at all.
+    saved_raw: Option<f64>,
+    /// `t_stable - t_boundary`: how long after the word itself the decision
+    /// could be taken.
+    lag: Option<f64>,
+    flaps: usize,
+}
+
+/// Runs the punctuator over the partials of the line that is currently open.
+///
+/// Deliberately not part of the scoring above: that asks whether a boundary is
+/// real, this asks when it could have been known. Keeping them apart means a
+/// bad answer to one does not quietly contaminate the other.
+#[derive(Default)]
+struct Watch {
+    seen: BTreeMap<usize, Timing>,
+    rows: Vec<Early>,
+    ms: Vec<f64>,
+    /// Partials the model handed back a different number of words for. Their
+    /// indices mean nothing, so they are skipped rather than guessed at --
+    /// the same refusal `restore_words` makes for the same reason.
+    skipped: u64,
+    calls: u64,
+}
+
+impl Watch {
+    /// Punctuate one partial and fold it into what is already known.
+    ///
+    /// `now` is audio time. See the module docs on why it must not be a clock.
+    fn observe(&mut self, text: &str, now: Duration, punct: &mut OnlinePunct) -> Result<()> {
+        let n = text.split_whitespace().count();
+        if n < 2 {
+            return Ok(());
+        }
+        let started = Instant::now();
+        let out = punct.restore(text)?;
+        self.ms.push(started.elapsed().as_secs_f64() * 1e3);
+        self.calls += 1;
+
+        let pieces: Vec<&str> = out.split_whitespace().collect();
+        if pieces.len() != n {
+            self.skipped += 1;
+            return Ok(());
+        }
+        let ends: Vec<usize> = pieces
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| ends_sentence(p))
+            .map(|(i, _)| i)
+            .collect();
+        self.fold(&ends, n, now);
+        Ok(())
+    }
+
+    /// The stability rule, with the model taken out of the way.
+    ///
+    /// Separated so it can be tested: this is the part S2 would have to
+    /// reimplement inside `li-stream`, and it is the part whose thresholds the
+    /// flap column exists to choose.
+    fn fold(&mut self, ends: &[usize], n: usize, now: Duration) {
+        for (&i, t) in self.seen.iter_mut() {
+            if ends.contains(&i) {
+                t.streak += 1;
+                t.present = true;
+                // Two runs agreeing, and a word already decoded after it: the
+                // model has seen what follows and still says the sentence
+                // ended there. `li_stream::agree` commits on the same evidence,
+                // and the second half of the rule is also what stage S2 needs
+                // to get a real `t_end` -- a mark with nothing after it is the
+                // model guessing the utterance is over.
+                if t.stable.is_none() && t.streak >= 2 && i + 1 < n {
+                    t.stable = Some(now);
+                }
+            } else {
+                if t.present {
+                    t.flaps += 1;
+                }
+                t.present = false;
+                t.streak = 0;
+            }
+        }
+        for &i in ends {
+            self.seen.entry(i).or_insert(Timing {
+                first: now,
+                stable: None,
+                flaps: 0,
+                present: true,
+                streak: 1,
+            });
+        }
+    }
+
+    /// Close the line and record every inner boundary its final text kept.
+    ///
+    /// `t_close` is where the `Final` arrived, not `t_end`: the difference is
+    /// the 0.6 s of trailing silence the endpoint detector waits out, and that
+    /// silence is precisely what this feature would stop waiting for.
+    fn close(&mut self, words: &[Word], t_close: Duration) {
+        for (i, w) in words.iter().enumerate() {
+            // The boundary on the last word is the endpoint doing its job; it
+            // is worth nothing to predict, for the same reason `inner` exists.
+            if i + 1 >= words.len() || !ends_sentence(&w.text) {
+                continue;
+            }
+            self.rows.push(match self.seen.get(&i) {
+                Some(t) => Early {
+                    saved: t.stable.map(|s| t_close.saturating_sub(s).as_secs_f64()),
+                    saved_raw: Some(t_close.saturating_sub(t.first).as_secs_f64()),
+                    lag: t.stable.map(|s| s.as_secs_f64() - w.end.as_secs_f64()),
+                    flaps: t.flaps,
+                },
+                // Present when the line closed but in none of its partials:
+                // the endpoint re-decode changed the words. Counted, because a
+                // boundary that only exists in hindsight cannot be cut on.
+                None => Early {
+                    saved: None,
+                    saved_raw: None,
+                    lag: None,
+                    flaps: 0,
+                },
+            });
+        }
+        self.seen.clear();
+    }
+}
+
+/// Does this already-split word end a sentence?
+///
+/// The mark may sit behind a closing quote or bracket, which is how
+/// `you."` hides a full stop.
+fn ends_sentence(w: &str) -> bool {
+    w.trim_end_matches(['"', '\'', ')', ']', '\u{201d}'])
+        .ends_with(MARKS)
 }
 
 /// Token stream plus the token indices that end a sentence.
@@ -315,9 +517,7 @@ fn boundaries(text: &str) -> (Vec<String>, Vec<usize>, usize) {
     let mut ends = Vec::new();
     let mut last_word_start = 0usize;
     for raw in text.split_whitespace() {
-        let mark = raw
-            .trim_end_matches(['"', '\'', ')', ']', '\u{201d}'])
-            .ends_with(MARKS);
+        let mark = ends_sentence(raw);
         let piece = metrics::tokens(raw, false);
         if piece.is_empty() {
             continue;
@@ -397,7 +597,7 @@ fn pct(sorted: &[f64], q: f64) -> f64 {
     sorted[i]
 }
 
-fn report(args: &Args, utts: &[Utterance], mismatches: u64) {
+fn report(args: &Args, utts: &[Utterance], mismatches: u64, watch: &Watch) {
     let name = args
         .text
         .as_ref()
@@ -514,6 +714,8 @@ fn report(args: &Args, utts: &[Utterance], mismatches: u64) {
         pct(&per_word, 1.0)
     );
 
+    e2(watch);
+
     if args.dump {
         println!("\n## Utterances\n");
         for u in utts {
@@ -529,6 +731,101 @@ fn report(args: &Args, utts: &[Utterance], mismatches: u64) {
             );
         }
     }
+}
+
+/// The E2 table: how much of the wait the boundary was knowable for.
+fn e2(w: &Watch) {
+    if w.calls == 0 {
+        return;
+    }
+    let n = w.rows.len();
+    let unseen = w.rows.iter().filter(|r| r.saved_raw.is_none()).count();
+    let unstable = w
+        .rows
+        .iter()
+        .filter(|r| r.saved_raw.is_some() && r.saved.is_none())
+        .count();
+    let col = |f: fn(&Early) -> Option<f64>| {
+        let mut v: Vec<f64> = w.rows.iter().filter_map(f).collect();
+        v.sort_by(f64::total_cmp);
+        v
+    };
+    let saved = col(|r| r.saved);
+    let raw = col(|r| r.saved_raw);
+    let lag = col(|r| r.lag);
+    let flaps = col(|r| Some(r.flaps as f64));
+
+    println!("\n## E2 — how early was the boundary knowable\n");
+    println!("| | n | p50 | p90 | max |");
+    println!("|---|---|---|---|---|");
+    println!(
+        "| **`t_close − t_stable`** (s) | {} | **{:.2}** | {:.2} | {:.2} |",
+        saved.len(),
+        pct(&saved, 0.5),
+        pct(&saved, 0.9),
+        pct(&saved, 1.0)
+    );
+    println!(
+        "| `t_close − t_first` (s) | {} | {:.2} | {:.2} | {:.2} |",
+        raw.len(),
+        pct(&raw, 0.5),
+        pct(&raw, 0.9),
+        pct(&raw, 1.0)
+    );
+    println!(
+        "| `t_stable − t_boundary` (s) | {} | {:.2} | {:.2} | {:.2} |",
+        lag.len(),
+        pct(&lag, 0.5),
+        pct(&lag, 0.9),
+        pct(&lag, 1.0)
+    );
+    println!(
+        "| flaps before close | {} | {:.0} | {:.0} | {:.0} |",
+        flaps.len(),
+        pct(&flaps, 0.5),
+        pct(&flaps, 0.9),
+        pct(&flaps, 1.0)
+    );
+    println!(
+        "| partial restore (ms) | {} | {:.1} | {:.1} | {:.1} |",
+        w.ms.len(),
+        pct(&sorted(&w.ms), 0.5),
+        pct(&sorted(&w.ms), 0.9),
+        pct(&sorted(&w.ms), 1.0)
+    );
+    println!(
+        "\ninner boundaries at close **{n}** · never seen in a partial **{unseen}** \
+         · seen but never stable **{unstable}** · partials punctuated {} \
+         (word count changed on {}, skipped)",
+        w.calls, w.skipped
+    );
+
+    // The plan's gate, printed rather than left to be looked up: below a
+    // second, the endpoint detector was going to fire about then anyway and
+    // neither the early translation nor stage S2 pays for itself.
+    let med = pct(&saved, 0.5);
+    if saved.is_empty() || med.is_nan() {
+        println!(
+            "\n**No boundary ever became stable.** Nothing to gain here; the marks \
+             this clip produced inside a line never survived two consecutive partials."
+        );
+    } else if med >= 1.0 {
+        println!(
+            "\n**Gate passed**: median {med:.2} s ≥ 1.0 s. The wait is real and the \
+             boundary is knowable for most of it."
+        );
+    } else {
+        println!(
+            "\n**Gate failed**: median {med:.2} s < 1.0 s. The endpoint detector was \
+             going to fire about then anyway — layer 1 only."
+        );
+    }
+}
+
+fn sorted(v: &[f64]) -> Vec<f64> {
+    let mut v = v.to_vec();
+    v.sort_by(f64::total_cmp);
+    v
 }
 
 #[cfg(test)]
@@ -573,6 +870,73 @@ mod tests {
         inner.score(&mapped, &real, |t| t < ref_last);
         assert_eq!((all.hits, all.truth, all.predicted), (1, 1, 1));
         assert_eq!((inner.hits, inner.truth, inner.predicted), (0, 0, 0));
+    }
+
+    /// One partial is never enough: the model has not yet seen what follows.
+    #[test]
+    fn a_boundary_needs_two_runs_and_a_word_after_it() {
+        let mut w = Watch::default();
+        w.fold(&[3], 6, Duration::from_secs(1));
+        assert!(w.seen[&3].stable.is_none(), "one sighting is a guess");
+        w.fold(&[3], 6, Duration::from_secs(2));
+        assert_eq!(w.seen[&3].stable, Some(Duration::from_secs(2)));
+        assert_eq!(w.seen[&3].first, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_mark_on_the_last_decoded_word_is_the_model_guessing() {
+        // Twice in a row, but nothing decoded after it -- which is exactly the
+        // case where S2 would also have no word onset to cut at.
+        let mut w = Watch::default();
+        w.fold(&[4], 5, Duration::from_secs(1));
+        w.fold(&[4], 5, Duration::from_secs(2));
+        assert!(w.seen[&4].stable.is_none());
+        // One more word arrives and still says the sentence ended there.
+        w.fold(&[4], 6, Duration::from_secs(3));
+        assert_eq!(w.seen[&4].stable, Some(Duration::from_secs(3)));
+    }
+
+    #[test]
+    fn a_mark_that_comes_and_goes_is_counted_once_per_disappearance() {
+        let mut w = Watch::default();
+        w.fold(&[2], 9, Duration::from_secs(1));
+        w.fold(&[], 9, Duration::from_secs(2));
+        w.fold(&[], 9, Duration::from_secs(3));
+        assert_eq!(w.seen[&2].flaps, 1, "gone is gone, not gone twice");
+        // ...and the streak restarts, so it has to earn stability again.
+        w.fold(&[2], 9, Duration::from_secs(4));
+        assert!(w.seen[&2].stable.is_none());
+        w.fold(&[2], 9, Duration::from_secs(5));
+        assert_eq!(w.seen[&2].stable, Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn closing_ignores_the_boundary_on_the_last_word() {
+        let word = |text: &str, end: u64| Word {
+            text: text.to_owned(),
+            start: Duration::from_secs(end - 1),
+            end: Duration::from_secs(end),
+        };
+        let mut w = Watch::default();
+        w.fold(&[1], 4, Duration::from_secs(2));
+        w.fold(&[1], 4, Duration::from_secs(3));
+        w.close(
+            &[
+                word("so", 1),
+                word("far.", 2),
+                word("and", 3),
+                word("then.", 4),
+            ],
+            Duration::from_secs(9),
+        );
+        assert_eq!(
+            w.rows.len(),
+            1,
+            "the final `then.` is the endpoint's own cut"
+        );
+        assert_eq!(w.rows[0].saved, Some(6.0));
+        assert_eq!(w.rows[0].lag, Some(1.0), "stable at 3 s, word ended at 2 s");
+        assert!(w.seen.is_empty(), "the next line starts clean");
     }
 
     #[test]
