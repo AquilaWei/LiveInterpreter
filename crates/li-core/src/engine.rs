@@ -42,7 +42,7 @@
 //! what calls `Writer::finish`, so the transcript is closed properly exactly
 //! once, at the end of the chain.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -103,6 +103,9 @@ enum SinkMsg {
         /// False for the draft made from fast-lane text. It reaches the screen
         /// and stops there; the transcript takes the settled one.
         settled: bool,
+        /// A draft for a line that has not closed yet: see [`EarlyCut`]. The
+        /// sink shows it and files no latency reading for it.
+        early: bool,
         audio_end: Instant,
         lane: Lane,
     },
@@ -123,9 +126,19 @@ struct MtJob {
     /// in [`Drafts`] and used only if the line then closes saying exactly what
     /// was translated. See [`Speculation`].
     speculative: bool,
+    /// The prefix of a line that is still open, cut at a sentence end the fast
+    /// lane found inside it. See [`EarlyCut`]. Unlike a guess it does reach the
+    /// screen; unlike a draft it is not the whole line, so it is never
+    /// remembered in [`Drafts`] -- no settled text will ever equal it.
+    early: bool,
     /// Wall clock for the end of this line's audio, so the sink can report how
     /// long the reader actually waited. PLAN §7 measures latency from there,
     /// not from when the line was queued.
+    ///
+    /// Meaningless for an `early` job, and not read for one: the prefix's audio
+    /// ends somewhere inside the line and a partial carries no word times, so
+    /// any value here would be a guess, and every guess available flatters the
+    /// number.
     audio_end: Instant,
     lane: Lane,
 }
@@ -225,12 +238,154 @@ impl Speculation {
             text: g.text.clone(),
             settled: false,
             speculative: true,
+            early: false,
             // Never used: a guess is not sent to the sink, so nothing measures
             // how long a reader waited for it.
             audio_end: Instant::now(),
             lane: Lane::Fast,
         });
     }
+}
+
+/// How many hypotheses in a row must agree before a sentence end is acted on.
+///
+/// Two, and the rule is `li_stream::agree`'s, not [`SPECULATE_AFTER`]'s: what
+/// makes a restored full stop trustworthy is *more words arriving and it still
+/// being there*, not time passing. A wall clock would misfire in a slow passage
+/// and never fire in a fast one -- exactly backwards for a feature that exists
+/// for speakers who do not pause.
+///
+/// Task 1.25's E2 measured what it costs: over six clips the mark came and went
+/// a median of **0 times** before the line closed, and waiting for the second
+/// sighting gives up 0.32-1.6 s of a 1.9-3.5 s head start. Cheap insurance.
+const CONFIRM_RUNS: u32 = 2;
+
+/// Translate a sentence that has ended, without waiting for the line to.
+///
+/// [`Speculation`] is early by one endpoint: it uses the silence that closes a
+/// line. A speaker who does not pause never produces that silence, and the line
+/// runs on until `rule2`/`rule3` cuts it -- which is the case the user reported
+/// and E2 put a number on: the fast lane's own restored full stop is stable a
+/// median 3.52 s (p90 6.72 s) before the line it sits in closes, on a clip at
+/// 1.5x speed.
+///
+/// So the prefix up to that stop is translated and shown, as a draft, on the
+/// line that is still open. Three properties make this much cheaper than
+/// cutting the line (stage S2) would be:
+///
+/// * **Segmentation does not move.** No `t_end` is invented, `Stream::claim`
+///   and `emitted_through` never see it, and every deterministic number in
+///   `xtask eval` is untouched by construction.
+/// * **The screen already handles it.** `EngineEvent::Translation` with
+///   `settled: false` is the draft path, and the front end's guard is
+///   `line_id < translated` -- so a second translation for the same open line
+///   replaces the first and keeps the tentative styling. No UI change.
+/// * **Being wrong is cheap.** The settled translation overwrites it a second
+///   or two later, exactly as a draft is overwritten today.
+///
+/// What it is not: a transcript entry. Only settled text is written (PLAN §11).
+#[derive(Default)]
+struct EarlyCut {
+    /// The line these sightings belong to.
+    line_id: u64,
+    /// Word index of a sentence end -> how many consecutive hypotheses have
+    /// shown it. An index that goes missing is removed, so it has to earn
+    /// [`CONFIRM_RUNS`] again.
+    seen: BTreeMap<usize, u32>,
+    /// How many words have already been sent for this line. The prefix only
+    /// ever grows, so this is both the dedupe and the guarantee that the
+    /// Chinese on the bar never gets shorter.
+    sent_words: usize,
+}
+
+impl EarlyCut {
+    /// A new hypothesis for the open line.
+    fn observe(&mut self, out: &Out, line_id: u64, text: &str) {
+        if !out.mid_line {
+            return;
+        }
+        if line_id != self.line_id {
+            self.settle();
+            self.line_id = line_id;
+        }
+        let words: Vec<&str> = text.split_whitespace().collect();
+        // A stop on the last decoded word is the model saying it thinks the
+        // utterance is over, with nothing after it to check that against -- and
+        // if it is right, the endpoint detector is about to cut there anyway.
+        // Only a stop with a word behind it is evidence.
+        let ends: Vec<usize> = words
+            .iter()
+            .enumerate()
+            .take(words.len().saturating_sub(1))
+            .filter(|(_, w)| ends_sentence(w))
+            .map(|(i, _)| i)
+            .collect();
+        self.seen.retain(|i, _| ends.contains(i));
+        for i in ends {
+            *self.seen.entry(i).or_default() += 1;
+        }
+
+        let Some(&cut) = self
+            .seen
+            .iter()
+            .filter(|(_, runs)| **runs >= CONFIRM_RUNS)
+            .map(|(i, _)| i)
+            .next_back()
+        else {
+            return;
+        };
+        // The whole prefix, not the sentence since the last cut: the reader is
+        // looking at one row that is replaced in place, so what goes on it has
+        // to be everything the line has said so far.
+        if cut < self.sent_words {
+            return;
+        }
+        let prefix = words[..=cut].join(" ");
+        if !worth_translating(&prefix) {
+            return;
+        }
+        self.sent_words = cut + 1;
+        tracing::debug!(
+            line_id,
+            words = self.sent_words,
+            open = words.len(),
+            "translating a sentence the line has not finished"
+        );
+        let _ = out.mt.try_send(MtJob {
+            line_id,
+            text: prefix,
+            settled: false,
+            speculative: false,
+            early: true,
+            // Never read for an `early` job. See `MtJob::audio_end`.
+            audio_end: Instant::now(),
+            lane: Lane::Fast,
+        });
+    }
+
+    /// The line closed. Its own draft is on its way and knows the whole text.
+    fn settle(&mut self) {
+        self.seen.clear();
+        self.sent_words = 0;
+    }
+}
+
+/// Does this word end a sentence?
+///
+/// The mark can hide behind a closing quote, which is how `you."` stops being
+/// a full stop. Shared with `xtask punct`'s measurement in spirit; kept here
+/// rather than exported because `li-core` is where the policy lives.
+fn ends_sentence(w: &str) -> bool {
+    w.trim_end_matches(['"', '\'', ')', ']', '\u{201d}'])
+        .ends_with(['.', '!', '?'])
+}
+
+/// The two things watching a line that is still open: one waits for the words
+/// to stop moving, the other for a sentence inside them to end.
+#[derive(Default)]
+struct Watchers {
+    spec: Speculation,
+    early: EarlyCut,
 }
 
 /// Where finalised events and translatable lines go.
@@ -242,6 +397,9 @@ struct Out {
     sink: mpsc::Sender<SinkMsg>,
     mt: mpsc::Sender<MtJob>,
     drafts: bool,
+    /// Whether a sentence that ends inside an open line may be translated
+    /// before the line closes. Implies `drafts`: it is the same path.
+    mid_line: bool,
 }
 
 /// Converts a position on the audio timeline into wall time.
@@ -497,6 +655,12 @@ impl Engine {
                 // accurate lane off, `li-stream` finalises the fast lane's
                 // sentence outright and there is nothing to be early about.
                 drafts: self.cfg.mt.draft_from_fast_lane && mode == LaneMode::Dual,
+                // No `punctuation` term: with the punctuator off the text
+                // carries no marks and `EarlyCut` finds nothing, which is the
+                // same answer arrived at without a second flag to keep in step.
+                mid_line: self.cfg.mt.draft_mid_line
+                    && self.cfg.mt.draft_from_fast_lane
+                    && mode == LaneMode::Dual,
             },
             paused: paused.clone(),
         })?);
@@ -617,6 +781,7 @@ fn spawn_mt(
                 text: src,
                 settled,
                 speculative,
+                early,
                 audio_end,
                 lane,
             } = pending.pop_front().expect("not empty");
@@ -646,13 +811,17 @@ fn spawn_mt(
                 line_id,
                 settled,
                 speculative,
+                early,
                 words = src.split_whitespace().count(),
                 ms = began.elapsed().as_millis() as u64,
                 "translated"
             );
             match out {
                 Ok(text) => {
-                    if !settled {
+                    // An early prefix is deliberately not remembered: no
+                    // settled line will ever equal it, so it could only evict
+                    // a draft that would have been reused.
+                    if !settled && !early {
                         drafted.remember(line_id, src, &text);
                     }
                     // A guess stops here. It is worth having only if the line
@@ -666,6 +835,7 @@ fn spawn_mt(
                             line_id,
                             text,
                             settled,
+                            early,
                             audio_end,
                             lane,
                         })
@@ -704,6 +874,18 @@ fn drop_superseded_drafts(pending: &mut VecDeque<MtJob>) {
     };
     let before = pending.len();
     pending.retain(|j| j.settled || rank(j) == best);
+    // Everything unsettled still here is the same line and the same kind, so
+    // only the last of them can still be early. This is what keeps a line with
+    // three sentence ends in it from spending three passes: each prefix
+    // contains the one before it, so translating an earlier one would put
+    // Chinese on the bar that the very next job replaces with a superset.
+    let newest = pending.iter().rposition(|j| !j.settled);
+    let mut i = 0;
+    pending.retain(|j| {
+        let here = i;
+        i += 1;
+        j.settled || Some(here) == newest
+    });
     if pending.len() < before {
         tracing::debug!(
             dropped = before - pending.len(),
@@ -819,6 +1001,7 @@ fn spawn_sink(
                     line_id,
                     text,
                     settled,
+                    early,
                     audio_end,
                     lane,
                 } => {
@@ -834,15 +1017,23 @@ fn spawn_sink(
                         text,
                         settled,
                     });
-                    let sample = LatencySample {
-                        line_id,
-                        lane,
-                        stage: Stage::Translation,
-                        settled,
-                        latency: audio_end.elapsed(),
-                    };
-                    log_latency(&sample);
-                    let _ = events.send(EngineEvent::Metrics(sample));
+                    // No reading for an early prefix. G3 is "this line's audio
+                    // ends -> its Chinese is on screen", and a prefix's audio
+                    // ends somewhere inside the line at a time no partial
+                    // carries. Reporting `now - now` would show a triumphant
+                    // zero and quietly corrupt the one gate this feature is
+                    // supposed to be judged by.
+                    if !early {
+                        let sample = LatencySample {
+                            line_id,
+                            lane,
+                            stage: Stage::Translation,
+                            settled,
+                            latency: audio_end.elapsed(),
+                        };
+                        log_latency(&sample);
+                        let _ = events.send(EngineEvent::Metrics(sample));
+                    }
                 }
             }
         }
@@ -921,7 +1112,7 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
         let mut samples: u64 = 0;
         let mut speech_start: Option<Duration> = None;
         let mut clock = Clock::default();
-        let mut spec = Speculation::default();
+        let mut watch = Watchers::default();
         let mut lag_reported = Instant::now();
 
         while let Some(frame) = p.frames.blocking_recv() {
@@ -954,7 +1145,7 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
                     match ev {
                         AsrEvent::Partial { text, .. } => {
                             let text = punctuate(p.punct.as_mut(), &text);
-                            emit(&p.out, &clock, &mut spec, stream.fast_partial(&text, now));
+                            emit(&p.out, &clock, &mut watch, stream.fast_partial(&text, now));
                         }
                         AsrEvent::Final {
                             words,
@@ -963,7 +1154,7 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
                             ..
                         } => {
                             let words = punctuate_words(p.punct.as_mut(), words);
-                            emit(&p.out, &clock, &mut spec, stream.fast_final(&words, now));
+                            emit(&p.out, &clock, &mut watch, stream.fast_final(&words, now));
                             // The accurate lane runs once over exactly this
                             // utterance: its boundaries come from the fast
                             // lane's own endpoint detector, which is the
@@ -997,16 +1188,16 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
                 emit(
                     &p.out,
                     &clock,
-                    &mut spec,
+                    &mut watch,
                     stream.accurate_segment(&words, now),
                 );
             }
-            emit(&p.out, &clock, &mut spec, stream.tick(now));
+            emit(&p.out, &clock, &mut watch, stream.tick(now));
             // The one place the fast lane's silence is spent on something. By
             // here the frame has been through both lanes, so if the words have
             // stopped moving they really have.
             if p.out.drafts {
-                spec.tick(&p.out);
+                watch.spec.tick(&p.out);
             }
 
             // How far behind the live audio this thread is, once it has done
@@ -1034,7 +1225,7 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
             })) = rt.block_on(fast.finalize())
         {
             let words = punctuate_words(p.punct.as_mut(), words);
-            emit(&p.out, &clock, &mut spec, stream.fast_final(&words, end));
+            emit(&p.out, &clock, &mut watch, stream.fast_final(&words, end));
             offer(&p.seg_tx, &ring, t_start, t_end.min(end), &stream);
         }
         if let Some(n) = p
@@ -1050,14 +1241,14 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
             emit(
                 &p.out,
                 &clock,
-                &mut spec,
+                &mut watch,
                 stream.accurate_segment(&words, end),
             );
         }
         emit(
             &p.out,
             &clock,
-            &mut spec,
+            &mut watch,
             stream.tick(end + Duration::from_secs_f64(p.cfg.promote_after_s)),
         );
     }))
@@ -1155,7 +1346,7 @@ fn offer(
 /// second is the whole reason it exists, and losing one costs nothing, so a
 /// full queue drops it without a word. `SourcePartial { settled: false }` is
 /// never queued: those arrive dozens of times a second.
-fn emit(out: &Out, clock: &Clock, spec: &mut Speculation, events: Vec<EngineEvent>) {
+fn emit(out: &Out, clock: &Clock, w: &mut Watchers, events: Vec<EngineEvent>) {
     for ev in events {
         let mut metric = None;
         match &ev {
@@ -1166,7 +1357,8 @@ fn emit(out: &Out, clock: &Clock, spec: &mut Speculation, events: Vec<EngineEven
                 lane,
                 ..
             } => {
-                spec.settle();
+                w.spec.settle();
+                w.early.settle();
                 let audio_end = clock.wall(*t_end);
                 // The gate reading, at last: PLAN §16's G1 and G2 are both
                 // "audio ends -> text on screen", and until now nothing in the
@@ -1186,6 +1378,7 @@ fn emit(out: &Out, clock: &Clock, spec: &mut Speculation, events: Vec<EngineEven
                         text: text.clone(),
                         settled: true,
                         speculative: false,
+                        early: false,
                         audio_end,
                         lane: *lane,
                     };
@@ -1200,8 +1393,11 @@ fn emit(out: &Out, clock: &Clock, spec: &mut Speculation, events: Vec<EngineEven
                 closed: None,
                 ..
             } => {
-                // Still moving. The guess waits for it to stop.
-                spec.observe(*line_id, text);
+                // Still moving. The guess waits for it to stop -- but a
+                // sentence inside it may already have ended, and that does not
+                // wait for anything.
+                w.spec.observe(*line_id, text);
+                w.early.observe(out, *line_id, text);
             }
             EngineEvent::SourcePartial {
                 line_id,
@@ -1209,7 +1405,8 @@ fn emit(out: &Out, clock: &Clock, spec: &mut Speculation, events: Vec<EngineEven
                 closed: Some(t_end),
                 ..
             } => {
-                spec.settle();
+                w.spec.settle();
+                w.early.settle();
                 // The line's own span, the same origin the settled line will
                 // use -- so the two readings for one line are the same
                 // measurement taken twice, and subtracting them gives what the
@@ -1233,6 +1430,7 @@ fn emit(out: &Out, clock: &Clock, spec: &mut Speculation, events: Vec<EngineEven
                         text: text.clone(),
                         settled: false,
                         speculative: false,
+                        early: false,
                         audio_end,
                         lane: Lane::Fast,
                     };
@@ -1271,9 +1469,25 @@ mod tests {
     use li_types::Lane;
 
     fn out(drafts: bool) -> (Out, mpsc::Receiver<SinkMsg>, mpsc::Receiver<MtJob>) {
+        mid_line_out(drafts, drafts)
+    }
+
+    fn mid_line_out(
+        drafts: bool,
+        mid_line: bool,
+    ) -> (Out, mpsc::Receiver<SinkMsg>, mpsc::Receiver<MtJob>) {
         let (sink, sink_rx) = mpsc::channel(64);
         let (mt, mt_rx) = mpsc::channel(MT_QUEUE);
-        (Out { sink, mt, drafts }, sink_rx, mt_rx)
+        (
+            Out {
+                sink,
+                mt,
+                drafts,
+                mid_line,
+            },
+            sink_rx,
+            mt_rx,
+        )
     }
 
     fn partial(line_id: u64, text: &str, settled: bool) -> EngineEvent {
@@ -1299,6 +1513,7 @@ mod tests {
             text: "words enough to be worth a pass".into(),
             settled,
             speculative: false,
+            early: false,
             audio_end: Instant::now(),
             lane: Lane::Fast,
         }
@@ -1373,7 +1588,7 @@ mod tests {
         emit(
             &o,
             &Clock::default(),
-            &mut Speculation::default(),
+            &mut Watchers::default(),
             vec![
                 partial(1, "so lets get", false),
                 partial(1, "so lets get started", false),
@@ -1386,13 +1601,158 @@ mod tests {
         );
     }
 
+    /// Feed a run of hypotheses for one open line and collect what was queued.
+    fn early(o: &Out, mt: &mut mpsc::Receiver<MtJob>, texts: &[&str]) -> Vec<String> {
+        let mut w = Watchers::default();
+        for t in texts {
+            emit(o, &Clock::default(), &mut w, vec![partial(1, t, false)]);
+        }
+        let mut out = Vec::new();
+        while let Ok(j) = mt.try_recv() {
+            if j.early {
+                out.push(j.text);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_sentence_that_ended_is_translated_before_the_line_closes() {
+        // The case task 1.25's E2 measured: the speaker did not pause, so the
+        // line is still open, but the fast lane's own full stop has been there
+        // for two hypotheses running with a word behind it.
+        let (o, _sink, mut mt) = out(true);
+        assert_eq!(
+            early(
+                &o,
+                &mut mt,
+                &[
+                    "We can ship it.",
+                    "We can ship it. On",
+                    "We can ship it. On Friday",
+                ],
+            ),
+            ["We can ship it."],
+            "sent on the second sighting, not the first"
+        );
+    }
+
+    #[test]
+    fn one_sighting_is_not_enough() {
+        // A full stop on the last decoded word is the model guessing the
+        // utterance is over -- and if it is right, the endpoint detector is
+        // about to cut there anyway.
+        let (o, _sink, mut mt) = out(true);
+        assert!(early(&o, &mut mt, &["We can ship it."]).is_empty());
+    }
+
+    #[test]
+    fn a_mark_that_goes_away_has_to_earn_it_again() {
+        let (o, _sink, mut mt) = out(true);
+        assert!(
+            early(
+                &o,
+                &mut mt,
+                &[
+                    "We can ship it. On",
+                    // The lane revised itself: it was a comma all along.
+                    "We can ship it, on",
+                    "We can ship it, on Friday",
+                ],
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_prefix_only_ever_grows() {
+        // Two sentences inside one line. The second send carries both, because
+        // the reader is looking at one row that is replaced in place -- and the
+        // first is not sent twice.
+        let (o, _sink, mut mt) = out(true);
+        assert_eq!(
+            early(
+                &o,
+                &mut mt,
+                &[
+                    "We can ship it. So",
+                    "We can ship it. So we",
+                    "We can ship it. So we will. And",
+                    "We can ship it. So we will. And then",
+                ],
+            ),
+            ["We can ship it.", "We can ship it. So we will."]
+        );
+    }
+
+    #[test]
+    fn a_new_line_starts_over() {
+        let (o, _sink, mut mt) = out(true);
+        let mut w = Watchers::default();
+        for (id, text) in [
+            (1, "We can ship it. So"),
+            (1, "We can ship it. So we"),
+            (2, "We can ship it. So"),
+            (2, "We can ship it. So we"),
+        ] {
+            emit(
+                &o,
+                &Clock::default(),
+                &mut w,
+                vec![partial(id, text, false)],
+            );
+        }
+        let sent: Vec<u64> = std::iter::from_fn(|| mt.try_recv().ok())
+            .filter(|j| j.early)
+            .map(|j| j.line_id)
+            .collect();
+        assert_eq!(sent, [1, 2], "the same words on a new line are new words");
+    }
+
+    #[test]
+    fn backchannel_is_not_worth_an_early_pass_either() {
+        let (o, _sink, mut mt) = out(true);
+        assert!(early(&o, &mut mt, &["Okay. Um", "Okay. Um right"]).is_empty());
+    }
+
+    #[test]
+    fn mid_line_off_leaves_the_line_alone_until_it_closes() {
+        let (o, _sink, mut mt) = mid_line_out(true, false);
+        assert!(
+            early(
+                &o,
+                &mut mt,
+                &["We can ship it. On", "We can ship it. On Friday"],
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn only_the_newest_prefix_of_an_open_line_is_still_worth_a_pass() {
+        // Both are early jobs for line 5 and the later one contains the
+        // earlier: translating the first would put Chinese on the bar that the
+        // second replaces with a superset.
+        let mut q: VecDeque<MtJob> = [("We can ship it."), ("We can ship it. So we will.")]
+            .into_iter()
+            .map(|t| MtJob {
+                text: t.into(),
+                early: true,
+                ..job(5, false)
+            })
+            .collect();
+        drop_superseded_drafts(&mut q);
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0].text, "We can ship it. So we will.");
+    }
+
     #[test]
     fn drafting_off_leaves_exactly_the_old_one_translation_per_line() {
         let (o, _sink, mut mt) = out(false);
         emit(
             &o,
             &Clock::default(),
-            &mut Speculation::default(),
+            &mut Watchers::default(),
             vec![partial(1, "so lets get started", true)],
         );
         assert!(queued(&mut mt).is_empty());
