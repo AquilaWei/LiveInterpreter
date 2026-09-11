@@ -1,0 +1,38 @@
+[package]
+name = "li-cli"
+description = "LiveInterpreter on the terminal (PLAN §17 task 1.8)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "liveinterpreter"
+path = "src/main.rs"
+
+[dependencies]
+li-core = { workspace = true }
+li-audio = { workspace = true }
+li-types = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+crossterm = "0.29"
+# Chinese is two columns wide and English is one. Wrapping by `chars()` puts the
+# subtitle bar's line breaks in the wrong place the moment a line is bilingual.
+unicode-width = "0.2"
+
+[features]
+# On by default because the accurate lane without a GPU is `base.en`, which is
+# 4-5 WER points worse (task 1.0b/1.4). A machine without SPIRV-Headers builds
+# with `--no-default-features` and gets the CPU path. See BUILDING.md.
+default = ["gpu-vulkan", "mt-dnnl"]
+gpu-vulkan = ["li-core/gpu-vulkan"]
+gpu-cuda = ["li-core/gpu-cuda"]
+gpu-sycl = ["li-core/gpu-sycl"]
+mt-dnnl = ["li-core/mt-dnnl"]
+
+[lints]
+workspace = true

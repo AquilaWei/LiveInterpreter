@@ -1,0 +1,28 @@
+[package]
+name = "li-audio"
+description = "Audio capture and level normalisation (PLAN §2.1, §9)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+li-types = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+cpal = { workspace = true }
+hound = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libpulse-binding = { workspace = true }
+libpulse-simple-binding = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LiveInterpreter",
+  "identifier": "tw.liveinterpreter.desktop",
+  "mainBinaryName": "liveinterpreter-desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "rpm"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "即時口譯字幕",
+    "longDescription": "Real-time interpreting subtitles: captures system audio or a microphone, transcribes English on two lanes (a fast streaming model for the screen, whisper.cpp for the transcript), translates to Traditional Chinese, and shows both lines in a floating always-on-top bar.",
+    "copyright": "Copyright (c) 2026 LiveInterpreter contributors",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libjavascriptcoregtk-4.1-0",
+          "libsoup-3.0-0",
+          "libpulse0",
+          "libvulkan1",
+          "libgomp1",
+          "libstdc++6"
+        ],
+        "files": {
+          "/usr/bin/liveinterpreter": "../../../target/release/liveinterpreter",
+          "/usr/lib/LiveInterpreter/libonnxruntime.so": "../../../target/release/libonnxruntime.so",
+          "/usr/lib/LiveInterpreter/libsherpa-onnx-c-api.so": "../../../target/release/libsherpa-onnx-c-api.so",
+          "/usr/lib/LiveInterpreter/libsherpa-onnx-cxx-api.so": "../../../target/release/libsherpa-onnx-cxx-api.so"
+        }
+      },
+      "rpm": {
+        "depends": [
+          "javascriptcoregtk4.1",
+          "libsoup3",
+          "pulseaudio-libs",
+          "vulkan-loader",
+          "libgomp",
+          "libstdc++"
+        ],
+        "files": {
+          "/usr/bin/liveinterpreter": "../../../target/release/liveinterpreter",
+          "/usr/lib/LiveInterpreter/libonnxruntime.so": "../../../target/release/libonnxruntime.so",
+          "/usr/lib/LiveInterpreter/libsherpa-onnx-c-api.so": "../../../target/release/libsherpa-onnx-c-api.so",
+          "/usr/lib/LiveInterpreter/libsherpa-onnx-cxx-api.so": "../../../target/release/libsherpa-onnx-cxx-api.so"
+        }
+      }
+    },
+    "publisher": "AquilaWei"
+  }
+}

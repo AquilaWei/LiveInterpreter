@@ -1,0 +1,20 @@
+[package]
+name = "li-vad"
+description = "Silero VAD speech gate and pause detection (PLAN §2.2)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+li-types = { workspace = true }
+anyhow = { workspace = true }
+ort = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hound = { workspace = true }
+
+[lints]
+workspace = true

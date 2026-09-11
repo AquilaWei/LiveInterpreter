@@ -1,0 +1,54 @@
+name: ci
+on:
+  push: { branches: [main, master] }
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # cpal's Linux host links ALSA. The Pulse backend needs no -dev package:
+      # libpulse-sys links libpulse.so.0 directly.
+      #
+      # `li-asr` adds two engines. sherpa-onnx and ONNX Runtime arrive as
+      # prebuilt binaries (`download-binaries`), but whisper.cpp is built from
+      # source, so cmake and a C++ compiler have to be here -- both ship on
+      # ubuntu-latest, listed anyway so a runner image change fails loudly.
+      # The GPU features are deliberately NOT built in CI: `gpu-vulkan` needs
+      # SPIRV-Headers, which no distro packages (task 1.0b), and CI has no GPU
+      # to run it on. `li-asr::device` is written so the selection policy is
+      # testable without one.
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev cmake g++
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  # The Windows half of task 1.11. This machine has no Windows, so the WASAPI
+  # path was written against cpal's source and checked by cross-compiling
+  # (`cargo check --target x86_64-pc-windows-msvc`); a runner that is actually
+  # Windows is the next step up from that, and the first place `cargo test`
+  # runs the loopback code's own tests on the platform it is for.
+  #
+  # Scoped to the crates that build from crates.io alone. `li-asr` and `li-mt`
+  # compile whisper.cpp, CTranslate2 and oneDNN from source, which is a
+  # different job's worth of build time and a set of Windows build warts nobody
+  # has met yet -- adding them here before anyone has built them once by hand
+  # would be guessing at their failures rather than fixing them.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p li-types -p li-audio -p li-stream -p li-transcript --all-targets -- -D warnings
+      - run: cargo test -p li-types -p li-audio -p li-stream -p li-transcript
