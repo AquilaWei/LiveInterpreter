@@ -1,0 +1,38 @@
+[package]
+name = "li-desktop"
+description = "The floating subtitle bar (PLAN §13.1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "liveinterpreter-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+li-core = { workspace = true }
+li-audio = { workspace = true }
+li-types = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2", features = ["devtools"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tauri-plugin-global-shortcut = "2.3.2"
+
+[features]
+default = ["gpu-vulkan", "mt-dnnl"]
+gpu-vulkan = ["li-core/gpu-vulkan"]
+gpu-cuda = ["li-core/gpu-cuda"]
+gpu-sycl = ["li-core/gpu-sycl"]
+mt-dnnl = ["li-core/mt-dnnl"]
+
+[lints]
+workspace = true

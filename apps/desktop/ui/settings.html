@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>LiveInterpreter 設定</title>
+<style>
+  :root { color-scheme: light dark; --line: #0002; --note: #6b6b6b; --warn: #a5400f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --line: #fff2; --note: #9a9a9a; --warn: #ffab8a; }
+  }
+  body {
+    margin: 0; padding: 14px 20px 0;
+    font: 14px/1.5 "Noto Sans CJK TC", "Noto Sans TC", system-ui, sans-serif;
+  }
+  h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
+  }
+  h2:first-of-type { margin-top: 0; }
+  h2 small { font-weight: 400; color: var(--note); letter-spacing: 0; margin-left: 6px; }
+  .row { display: grid; grid-template-columns: 8.5em 1fr 3.5em; gap: 10px; align-items: center; margin: 5px 0; }
+  .row > label { color: var(--note); }
+  .row output { text-align: right; font-variant-numeric: tabular-nums; }
+  .wide { display: block; margin: 5px 0; }
+  .wide > label { color: var(--note); display: block; margin-bottom: 3px; }
+  input[type=range] { width: 100%; }
+  input[type=text], select { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 5px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; }
+  .checks label { color: inherit; }
+  p.note { color: var(--note); margin: 6px 0 0; }
+  p.warn { color: var(--warn); margin: 6px 0 0; white-space: pre-wrap; }
+  code { font-family: ui-monospace, monospace; word-break: break-all; }
+  /* Room for the sticky footer: the window is sized to the form, but a form
+     taller than the screen is capped and scrolls, and the last section would
+     then sit under the buttons for good. */
+  /* Room under the last section for the sticky footer. */
+  #page { padding-bottom: 16px; }
+  footer {
+    position: sticky; bottom: 0; margin-top: 14px; padding: 10px 0;
+    border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center;
+    background: Canvas;
+  }
+  /* The buttons keep their size and the path gets what is left: a written
+     path is long, and a footer that lets it push the buttons into one letter
+     per line is worse than an ellipsis. */
+  footer button { font: inherit; padding: 4px 14px; flex: none; }
+  /* At the other end of the footer from 儲存, because it is the one button
+     here that cannot be undone: a hand aiming for 儲存 must not be able to
+     land on it. Coloured like the warnings for the same reason. */
+  #quit { margin-left: 8px; color: var(--warn); }
+  #said {
+    color: var(--note); min-width: 0; flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .keys { flex: none; color: var(--note); font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="page">
+  <h2>外觀 <small>立即套用</small></h2>
+  <div class="row">
+    <label for="font_size">字級</label>
+    <input type="range" id="font_size" min="12" max="48" step="1" />
+    <output for="font_size"></output>
+  </div>
+  <div class="row">
+    <label for="opacity">背景不透明度</label>
+    <input type="range" id="opacity" min="0" max="1" step="0.05" />
+    <output for="opacity"></output>
+  </div>
+  <div class="row">
+    <label for="width_pct">寬度（螢幕%）</label>
+    <input type="range" id="width_pct" min="10" max="100" step="1" />
+    <output for="width_pct"></output>
+  </div>
+  <div class="row">
+    <label for="margin_px">邊距</label>
+    <input type="range" id="margin_px" min="0" max="200" step="4" />
+    <output for="margin_px"></output>
+  </div>
+  <div class="row">
+    <label for="position">位置</label>
+    <select id="position">
+      <option value="bottom">螢幕下方</option>
+      <option value="top">螢幕上方</option>
+    </select>
+    <output></output>
+  </div>
+  <div class="row">
+    <label for="source_rows">原文列數上限</label>
+    <input type="range" id="source_rows" min="0" max="4" step="1" />
+    <output for="source_rows"></output>
+  </div>
+  <div class="row">
+    <label for="target_rows">譯文列數上限</label>
+    <input type="range" id="target_rows" min="1" max="4" step="1" />
+    <output for="target_rows"></output>
+  </div>
+  <div class="row">
+    <label for="min_dwell_ms">最短停留（ms）</label>
+    <input type="range" id="min_dwell_ms" min="0" max="2000" step="50" />
+    <output for="min_dwell_ms"></output>
+  </div>
+  <div class="checks">
+    <label><input type="checkbox" id="show_source" /> 顯示原文行</label>
+    <label><input type="checkbox" id="click_through" /> 點擊穿透</label>
+  </div>
+  <p class="note">超過列數上限的部分會被裁掉；原文未定稿時裁的是前面，正在讀的尾巴留著。逐字稿檔案不受影響。</p>
+  <p class="note">拖曳字幕條可以移動它，位置會自動記住。</p>
+
+  <h2>快捷鍵 <small>存檔後重新註冊</small></h2>
+  <div class="wide"><label for="hk_click_through">點擊穿透開關</label><input type="text" id="hk_click_through" spellcheck="false" /></div>
+  <div class="wide"><label for="hk_pause">暫停 / 繼續</label><input type="text" id="hk_pause" spellcheck="false" /></div>
+  <div class="wide"><label for="hk_settings">開啟這個視窗</label><input type="text" id="hk_settings" spellcheck="false" /></div>
+  <p class="note">寫法如 <code>Ctrl+Alt+C</code>、<code>Super+Shift+Space</code>；留空表示不用。點擊穿透一旦開啟，字幕條就收不到滑鼠事件了，只能靠快捷鍵關掉。</p>
+  <p class="warn" id="hkfail" hidden></p>
+
+  <h2>音訊 <small>存檔後立即切換</small></h2>
+  <div class="wide">
+    <label for="source">來源</label>
+    <select id="source"></select>
+  </div>
+
+  <h2>逐字稿 <small>下次啟動生效</small></h2>
+  <div class="checks">
+    <label><input type="checkbox" id="tr_enabled" /> 存檔</label>
+    <label><input type="checkbox" id="tr_bilingual" /> 另存原文譯文對照檔</label>
+  </div>
+  <div class="wide"><label for="tr_dir">資料夾</label><input type="text" id="tr_dir" spellcheck="false" /></div>
+  <div class="checks" id="formats"></div>
+
+  <h2>設定檔</h2>
+  <p class="note">辨識與翻譯的設定（<code>[asr]</code>、<code>[mt]</code>）還沒有做進這個視窗，請直接改檔案：<br /><code id="path"></code></p>
+  <p class="note">這個視窗只會改動它認得的欄位，檔案裡的註解和其他段落都會留著。</p>
+
+  <h2>版本</h2>
+  <p class="note"><code id="build"></code></p>
+  <p class="note">回報問題時請附上這一行。括號裡是這個執行檔是從哪一個 commit 建出來的 —— 版本號相同的兩個包，靠它才分得出來。</p>
+</div>
+
+<footer>
+  <button id="save">儲存</button>
+  <button id="close">關閉</button>
+  <span id="said"></span>
+  <span class="keys">Ctrl+S 儲存 · Esc 關閉</span>
+  <button id="quit" title="停止字幕、寫完逐字稿，然後結束整個程式">結束程式</button>
+</footer>
+
+<script type="module" src="settings.js"></script>
+</body>
+</html>

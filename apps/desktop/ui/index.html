@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>LiveInterpreter</title>
+<style>
+  :root {
+    /* Overwritten at load from the `[ui]` section of config.toml. The values
+       here are the defaults in `li_core::config::UiCfg`, so the bar looks
+       right for the frame before the config arrives. */
+    --font: 22px;
+    --opacity: 0.85;
+    --source-rows: 1;
+    --target-rows: 2;
+    --pad: 10px;
+  }
+  html, body {
+    margin: 0; padding: 0;
+    background: transparent;
+    /* The window is sized to the content by `fit_bar`, so the document must
+       be free to be exactly as tall as it is -- a 100% height here would
+       measure the window instead and the bar could never be fitted. */
+    overflow: hidden;
+    /* The whole window is the bar; nothing here should be selectable or
+       right-clickable, or dragging it turns into a text selection. */
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+  #bar {
+    position: relative;
+    box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: var(--pad) calc(var(--pad) * 2);
+    background: rgba(0, 0, 0, var(--opacity));
+    border-radius: 10px;
+    font-family: "Noto Sans CJK TC", "Noto Sans TC", system-ui, sans-serif;
+    font-size: var(--font);
+    text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  /* Each line gets a row budget and is clipped at it, rather than growing
+     without limit: one fast-lane endpoint can be 40 words (PLAN §12.2), and a
+     bar that grows to hold all of them stops being a bar. `min-height` keeps
+     the row there while it is empty, so the bar does not change height every
+     time a translation arrives.
+
+     `em` and not `lh`: the unit resolves against each row's own font size,
+     which is what makes the smaller source line reserve a smaller row. */
+  #source, #target {
+    display: -webkit-box; -webkit-box-orient: vertical;
+    line-height: 1.35; min-height: 1.35em; overflow: hidden;
+  }
+  #source { -webkit-line-clamp: var(--source-rows); line-clamp: var(--source-rows); }
+  #target { -webkit-line-clamp: var(--target-rows); line-clamp: var(--target-rows); }
+  /* Dimmed while it is the fast lane's guess and may still be replaced. The
+     translation row does the same: a draft is translated from fast-lane text
+     and gets overwritten when the accurate lane answers, and the reader is
+     owed the difference between "this is the answer" and "this is early". */
+  #source { color: #e8e8e8; font-size: 0.8em; }
+  #source.tentative { color: #9a9a9a; }
+  #target { color: #7fe3ff; }
+  #target.tentative { color: #58a0b4; }
+  #status {
+    position: absolute; top: 2px; right: 8px;
+    font-size: 11px; color: #8a8a8a; font-family: system-ui, sans-serif;
+  }
+  #status.error { color: #ff9c8a; }
+  #probe {
+    background: rgba(20,20,20,.95); color: #ddd;
+    font: 13px/1.5 system-ui, sans-serif; padding: 8px 16px;
+    border-radius: 0 0 10px 10px;
+  }
+  #probe b { color: #7fe3ff; }
+  #probe button { font: inherit; margin-right: 6px; }
+  body:not(.probe) #probe { display: none; }
+</style>
+</head>
+<body>
+  <div id="root">
+    <div id="bar">
+      <div id="status"></div>
+      <div id="source" class="tentative"></div>
+      <div id="target"></div>
+    </div>
+
+    <!-- Only shown with LI_PROBE=1. The four things Wayland might refuse
+         (PLAN §19.7), in a form a person can judge in half a minute. -->
+    <div id="probe">
+      <div>
+        <b>1 always on top</b> — put a window over this one. Does the bar stay visible?
+        &nbsp; <b>2 transparent</b> — are the corners rounded with the desktop showing through?
+      </div>
+      <div style="margin-top:4px">
+        <b>3 click-through</b> <button id="ct">toggle</button><span id="ctstate">off</span>
+        — mouse events the bar has received since it was turned on:
+        <b id="mcount">0</b> (0 after waving the mouse over the bar = it works).
+        &nbsp; <b>4 drag</b> — press and hold anywhere on the bar and move the mouse.
+      </div>
+    </div>
+  </div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

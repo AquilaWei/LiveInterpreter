@@ -1,0 +1,41 @@
+[package]
+name = "li-core"
+description = "Pipeline assembly, config and event bus (PLAN §10.3, §11)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+li-types = { workspace = true }
+li-audio = { workspace = true }
+li-vad = { workspace = true }
+li-asr = { workspace = true }
+li-mt = { workspace = true }
+li-stream = { workspace = true }
+li-transcript = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# The settings window edits the config as JSON; a test keeps that trip honest.
+serde_json = { workspace = true }
+
+[features]
+# Passed straight through to the lanes. None is on by default: each GPU backend
+# adds a build-time dependency (PLAN §8.1), and which kernels to compile in is a
+# decision for the binary being shipped, not for a library.
+gpu-vulkan = ["li-asr/gpu-vulkan"]
+gpu-cuda = ["li-asr/gpu-cuda"]
+gpu-sycl = ["li-asr/gpu-sycl"]
+mt-dnnl = ["li-mt/dnnl"]
+
+[lints]
+workspace = true

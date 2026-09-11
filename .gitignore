@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# uv
+uv.lock
+
+# Models / caches (downloaded at runtime, not committed)
+models/
+.cache/
+*.bin
+*.onnx
+*.gguf
+# ...except the 2.2 MB VAD, which is embedded in the binary (see
+# assets/models/README.md). The directory has to be un-ignored first or git
+# never looks inside it.
+!assets/models/
+!assets/models/*
+
+# Private recordings: real meetings with identifiable speakers. Kept local so
+# eval is reproducible on this machine, never committed.
+/*.mp3
+/*.m4a
+testdata/private/
+# Anything made from them -- eval reports, transcripts -- carries those
+# speakers' words as plainly as the audio does: keep it in testdata/private/.
+
+# Transcripts / runtime output
+out/
+transcripts/
+*.wav
+!testdata/**/*.wav
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Rust
+target/
