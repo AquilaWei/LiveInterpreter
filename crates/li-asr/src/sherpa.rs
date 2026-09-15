@@ -37,7 +37,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
-use li_types::AsrEvent;
+use li_types::{AsrEvent, Word};
 use serde::Deserialize;
 use sherpa_rs_sys as sys;
 
@@ -192,25 +192,30 @@ impl SherpaFast {
         }
     }
 
-    /// Read the current segment as words and clear it.
-    fn take_segment(&mut self) -> Result<Option<AsrEvent>> {
-        let json = unsafe {
+    /// The current segment as sherpa has it right now, without touching it.
+    ///
+    /// `None` means sherpa has nothing at all -- not even an empty result --
+    /// which is the one case where the caller must not reset either.
+    fn result_json(&self) -> Option<String> {
+        unsafe {
             let p = sys::SherpaOnnxGetOnlineStreamResultAsJson(self.recognizer, self.stream);
             if p.is_null() {
-                return Ok(None);
+                return None;
             }
             let s = CStr::from_ptr(p).to_string_lossy().into_owned();
             sys::SherpaOnnxDestroyOnlineStreamResultJson(p);
-            s
-        };
-        unsafe { sys::SherpaOnnxOnlineStreamReset(self.recognizer, self.stream) };
-        self.last_partial.clear();
+            Some(s)
+        }
+    }
 
+    /// Place one of those results on the audio timeline.
+    ///
+    /// `None` is "nothing was decoded", which at an endpoint means rule1 fired
+    /// on silence: a boundary, not a sentence.
+    fn parse_segment(&self, json: &str) -> Result<Option<(Vec<Word>, Duration)>> {
         let raw: SherpaResult =
-            serde_json::from_str(&json).context("parsing the sherpa-onnx result")?;
+            serde_json::from_str(json).context("parsing the sherpa-onnx result")?;
         if raw.tokens.is_empty() {
-            // An endpoint with nothing decoded: rule1 fired on silence. There
-            // is no sentence here, only a boundary.
             return Ok(None);
         }
         if raw.timestamps.len() != raw.tokens.len() {
@@ -233,9 +238,26 @@ impl SherpaFast {
             .map(|(_, t)| *t + LAST_PIECE)
             .unwrap_or_default();
         let words = words::merge(&pieces, t_end);
-        let Some(first) = words.first() else {
+        if words.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some((words, t_end)))
+    }
+
+    /// Read the current segment as words and clear it.
+    fn take_segment(&mut self) -> Result<Option<AsrEvent>> {
+        let Some(json) = self.result_json() else {
             return Ok(None);
         };
+        unsafe { sys::SherpaOnnxOnlineStreamReset(self.recognizer, self.stream) };
+        self.last_partial.clear();
+
+        let Some((words, t_end)) = self.parse_segment(&json)? else {
+            return Ok(None);
+        };
+        let first = words
+            .first()
+            .expect("parse_segment rejects an empty result");
         let event = AsrEvent::Final {
             seg_id: self.seg_id,
             t_start: first.start,
@@ -305,6 +327,30 @@ impl AsrEngine for SherpaFast {
             });
         }
         Ok(out)
+    }
+
+    /// The open hypothesis, with the word times sherpa already has for it.
+    ///
+    /// Deliberately not folded into [`AsrEvent::Partial`]. A partial is emitted
+    /// on every tick a character changes; this is asked only when something
+    /// downstream has found a reason to want a timestamp -- a candidate
+    /// sentence end, once or twice per sentence -- so the JSON round trip it
+    /// costs is paid at that rate and not at the partial rate.
+    ///
+    /// Read-only and repeatable: no `Reset`, no `seg_id`, no `last_partial`.
+    /// The next `feed` still sees exactly the stream it would have seen.
+    fn open_words(&mut self) -> Vec<Word> {
+        let Some(json) = self.result_json() else {
+            return Vec::new();
+        };
+        match self.parse_segment(&json) {
+            Ok(Some((words, _))) => words,
+            Ok(None) => Vec::new(),
+            Err(e) => {
+                tracing::warn!("fast lane: reading the open hypothesis: {e:#}");
+                Vec::new()
+            }
+        }
     }
 
     async fn finalize(&mut self) -> Result<Option<AsrEvent>> {

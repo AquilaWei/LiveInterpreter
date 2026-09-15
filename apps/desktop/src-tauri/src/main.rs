@@ -44,6 +44,8 @@ use anyhow::Result;
 use li_audio::AudioSource;
 use li_core::Engine;
 use li_core::config::{BarPosition, EngineConfig, HotkeyCfg, UiCfg};
+use li_core::download;
+use li_core::models::Models;
 use li_types::{DeviceInfo, UiEvent};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
@@ -54,6 +56,7 @@ use tokio::sync::Mutex;
 
 const BAR: &str = "bar";
 const SETTINGS: &str = "settings";
+const DOWNLOAD: &str = "download";
 
 /// The engine, when there is one. The probe modes run the bar without it.
 struct State {
@@ -651,6 +654,80 @@ fn toggle_pause(app: &AppHandle) {
     tauri::async_runtime::spawn(async move { engine.lock().await.pause(on) });
 }
 
+/// What the first run has to fetch, for the page that asks permission.
+#[derive(serde::Serialize)]
+struct PlanInfo {
+    models: Vec<String>,
+    total_bytes: u64,
+    dir: String,
+}
+
+#[tauri::command]
+fn model_plan(app: AppHandle) -> Result<PlanInfo, String> {
+    let cfg = shell(&app).lock().unwrap().cfg.clone();
+    let models = Models::new();
+    let plan = download::plan(&models, &cfg).map_err(|e| format!("{e:#}"))?;
+    Ok(PlanInfo {
+        models: plan.models().into_iter().map(str::to_owned).collect(),
+        total_bytes: plan.total_bytes,
+        dir: models.root().display().to_string(),
+    })
+}
+
+/// Fetch the missing models, then start the engine.
+///
+/// Starting it here rather than making the page ask separately keeps the one
+/// invariant this is all for: the engine is started exactly once, and only
+/// after its models are on disk.
+#[tauri::command]
+async fn fetch_models(app: AppHandle, state: tauri::State<'_, State>) -> Result<(), String> {
+    let cfg = shell(&app).lock().unwrap().cfg.clone();
+    let models = Models::new();
+    let plan = download::plan(&models, &cfg).map_err(|e| format!("{e:#}"))?;
+
+    // Emitted rather than returned: a 1 GB transfer has to show progress while
+    // it runs, and a command's return value arrives only at the end.
+    let emitter = app.clone();
+    let total = plan.total_bytes;
+    download::fetch(&plan, move |p| {
+        let (stage, name, done) = match p {
+            download::Progress::Started { name, .. } => ("fetching", name, None),
+            download::Progress::Bytes { done, .. } => ("fetching", String::new(), Some(done)),
+            download::Progress::Verifying { name } => ("checking", name, None),
+            download::Progress::Unpacking { name } => ("unpacking", name, None),
+            download::Progress::Finished { name } => ("done", name, None),
+        };
+        let _ = emitter.emit_to(
+            DOWNLOAD,
+            "models://progress",
+            serde_json::json!({ "stage": stage, "name": name, "done": done, "total": total }),
+        );
+    })
+    .await
+    .map_err(|e| format!("{e:#}"))?;
+
+    if let Err(e) = state.engine.lock().await.start().await {
+        return Err(format!("模型下載完成，但引擎啟動失敗：{e:#}"));
+    }
+    if let Some(w) = app.get_webview_window(DOWNLOAD) {
+        let _ = w.close();
+    }
+    Ok(())
+}
+
+fn download_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(window) = app.get_webview_window(DOWNLOAD) {
+        window.show()?;
+        window.set_focus()?;
+        return Ok(window);
+    }
+    WebviewWindowBuilder::new(app, DOWNLOAD, WebviewUrl::App("download.html".into()))
+        .title("LiveInterpreter — 下載模型")
+        .inner_size(560.0, 420.0)
+        .always_on_top(true)
+        .build()
+}
+
 fn settings_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     {
         // Only on the way in: opening the window again while it is already
@@ -863,6 +940,8 @@ fn main() {
             fit_bar,
             pause,
             transcripts,
+            model_plan,
+            fetch_models,
             quit
         ])
         .on_window_event(|window, event| {
@@ -987,6 +1066,29 @@ fn main() {
                     }
                 }
             });
+
+            // A first run has no models, and `start` would fail on the first
+            // one it could not resolve -- which used to be the whole story
+            // (task 1.13). Ask before starting, and if anything is missing open
+            // the download window instead; `fetch_models` starts the engine
+            // when it is done.
+            let cfg_for_plan = shell(&handle).lock().unwrap().cfg.clone();
+            match download::plan(&Models::new(), &cfg_for_plan) {
+                Ok(plan) if !plan.is_empty() => {
+                    tracing::info!(
+                        models = ?plan.models(),
+                        mib = plan.total_bytes / (1024 * 1024),
+                        "models are missing; opening the download window instead of starting"
+                    );
+                    download_window(&handle)?;
+                    return Ok(());
+                }
+                Ok(_) => {}
+                // A manifest or config problem is not a reason to refuse to
+                // start: `start` will report whatever is actually wrong, in the
+                // words of the thing that is wrong.
+                Err(e) => tracing::warn!("checking for models: {e:#}"),
+            }
 
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = engine.lock().await.start().await {

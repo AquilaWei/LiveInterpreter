@@ -1,0 +1,61 @@
+LiveInterpreter
+Copyright 2026 AquilaWei
+
+This product includes software developed as part of the LiveInterpreter
+project, licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Not everything in this repository is under that licence, and the models the
+program runs are not in this repository at all. What follows is the whole
+picture, because "the repo says Apache-2.0" is only true of the code.
+
+--------------------------------------------------------------------------
+1. In this repository
+--------------------------------------------------------------------------
+
+  Source code, build scripts, docs          Apache-2.0 (LICENSE)
+
+  assets/models/silero_vad.onnx             MIT
+      silero-vad v5, https://github.com/snakers4/silero-vad
+      The only model committed here (2.2 MB). Embedded into the binary with
+      include_bytes!; see assets/models/README.md.
+
+  testdata/read_clean*.wav, read_hard.wav   CC-BY-4.0
+  and their .en.txt references
+      LibriSpeech, https://www.openslr.org/12/
+      Attribution: Vassil Panayotov, Guoguo Chen, Daniel Povey, Sanjeev
+      Khudanpur. Modified: consecutive utterances from one chapter
+      concatenated with 0.7 s gaps (poc/scripts/make_goldens.py).
+
+  testdata/ami_meeting*.wav                 CC-BY-4.0
+  and their .en.txt references
+      AMI Meeting Corpus, University of Edinburgh,
+      https://groups.inf.ed.ac.uk/ami/corpus/
+      Modified: a 100 s window cut from the Array1-01 single distant
+      microphone of one session, with the corpus's own word-level human
+      annotation as the reference (poc/scripts/make_ami_golden.py).
+
+  testdata/*.zh.txt                         Apache-2.0, but see the caveat
+      Chinese references written by Claude and NOT human-verified. Good for
+      relative comparison only; do not quote the absolute chrF as a quality
+      claim. testdata/README.md says the same thing at more length.
+
+--------------------------------------------------------------------------
+2. Not in this repository: the models the program downloads
+--------------------------------------------------------------------------
+
+No installer built from this tree ships a model. The recogniser, translator
+and punctuation models are fetched into ~/.cache/liveinterpreter/models/ and
+are governed by their own licences, listed in assets/models.toml.
+
+One of them needs saying out loud:
+
+  NLLB-200-distilled-600M (the default translator)      CC-BY-NC-4.0
+
+      Non-commercial. Running this program for yourself is fine. Building a
+      product on it is not, and neither is redistributing the model. If you
+      need a commercial translator, replace it -- the MT backend is behind a
+      trait (crates/li-mt), and assets/models.toml is where the choice is
+      recorded.
+
+The Apache-2.0 licence on this code does not extend to any of those models,
+and none of them is a derivative work of this code.

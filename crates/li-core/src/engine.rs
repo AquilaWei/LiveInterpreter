@@ -50,7 +50,10 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use li_asr::{AsrEngine, punct::OnlinePunct, window::Ring};
 use li_audio::{AudioSource, DesktopSource};
-use li_stream::{LaneMode, Stream, StreamConfig};
+use li_stream::{
+    LaneMode, Stream, StreamConfig,
+    punct::{BoundaryConfig, BoundaryPolicy},
+};
 use li_transcript::{Langs, TranscriptSink, Writer};
 use li_types::{
     AsrEvent, AudioFrame, EngineEvent, EngineStatus, Lane, LatencySample, Stage, TranscriptLine,
@@ -644,6 +647,7 @@ impl Engine {
             cfg: self.cfg.stream(),
             mode,
             fast,
+            cut: semantic_cut(self.cfg.asr.fast.as_ref(), punct.is_some()),
             punct,
             frames,
             seg_tx,
@@ -1094,6 +1098,10 @@ struct Pipeline {
     /// `&mut`, never shared -- the same rules as `SherpaFast`, for the same
     /// reason (`sherpa.rs:79-82`).
     punct: Option<OnlinePunct>,
+    /// Task 1.25 stage 2, off unless `[asr.fast] semantic_cut` says otherwise.
+    /// `None` is the 1.26 behaviour exactly: lines end where the endpoint
+    /// detector puts them.
+    cut: Option<BoundaryPolicy>,
     frames: mpsc::Receiver<AudioFrame>,
     seg_tx: mpsc::Sender<Segment>,
     hyp_rx: mpsc::Receiver<Vec<Word>>,
@@ -1145,7 +1153,24 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
                     match ev {
                         AsrEvent::Partial { text, .. } => {
                             let text = punctuate(p.punct.as_mut(), &text);
-                            emit(&p.out, &clock, &mut watch, stream.fast_partial(&text, now));
+                            if let Some(policy) = p.cut.as_mut()
+                                && let Some((words, t_end)) =
+                                    early_cut(policy, fast.as_mut(), &text, now)
+                            {
+                                emit(
+                                    &p.out,
+                                    &clock,
+                                    &mut watch,
+                                    stream.fast_cut(&words, t_end, now),
+                                );
+                            }
+                            // Whatever has already become a line of its own is
+                            // not part of the line still being revised.
+                            let shown = match p.cut.as_ref().map(BoundaryPolicy::emitted) {
+                                Some(n) if n > 0 => tail_words(&text, n),
+                                _ => text,
+                            };
+                            emit(&p.out, &clock, &mut watch, stream.fast_partial(&shown, now));
                         }
                         AsrEvent::Final {
                             words,
@@ -1154,6 +1179,9 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
                             ..
                         } => {
                             let words = punctuate_words(p.punct.as_mut(), words);
+                            if let Some(policy) = p.cut.as_mut() {
+                                policy.settle(now);
+                            }
                             emit(&p.out, &clock, &mut watch, stream.fast_final(&words, now));
                             // The accurate lane runs once over exactly this
                             // utterance: its boundaries come from the fast
@@ -1256,6 +1284,83 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
 
 /// Punctuate one hypothesis, or hand it back untouched.
 ///
+/// Stage 2's boundary policy, or `None` and the reason why once.
+///
+/// Off by default and quiet about it. The condition worth stating is the
+/// second: with no punctuation model there are no marks to cut on, so
+/// `semantic_cut` alone can do nothing. Rather than make the user keep two
+/// switches in step, this reports the combination and gives up.
+fn semantic_cut(lane: Option<&LaneCfg>, punctuated: bool) -> Option<BoundaryPolicy> {
+    if !lane.is_some_and(|l| l.semantic_cut) {
+        return None;
+    }
+    if !punctuated {
+        tracing::info!("semantic_cut: off, there is no punctuation model to cut on");
+        return None;
+    }
+    tracing::info!("semantic_cut: on -- a line may end at a restored full stop (task 1.25 S2)");
+    Some(BoundaryPolicy::new(BoundaryConfig::default()))
+}
+
+/// Ask the policy whether this hypothesis ends a line, and find the onset that
+/// would close it (PLAN task 1.25, stage 2).
+///
+/// Two separate things have to be true, and only one of them is the policy's.
+/// The policy says a boundary has held long enough to act on; this function
+/// then has to turn a word *index* into a word *onset*, and the only source of
+/// those is the fast lane's own open hypothesis.
+///
+/// **The index and the onset come from different places, so they are checked
+/// against each other.** The index counts words in the punctuated text; the
+/// onsets count words in sherpa's decoded tokens. Task 1.25 measured the
+/// punctuation model leaving the word count alone across ~960 partials with
+/// zero violations, and `restore_words` enforces it on closed lines -- but the
+/// partial path has no such enforcement, and being wrong here is not a
+/// cosmetic error. An index off by one takes `t_end` from the wrong word, and
+/// a `t_end` past the real boundary makes `emitted_through` discard the head of
+/// the next accurate line. So a disagreement declines the cut and says so, and
+/// the line closes the way it always did.
+fn early_cut(
+    policy: &mut BoundaryPolicy,
+    fast: &mut dyn AsrEngine,
+    text: &str,
+    now: Duration,
+) -> Option<(Vec<Word>, Duration)> {
+    let i = policy.observe(text, now)?;
+    let words = fast.open_words();
+    if words.len() != text.split_whitespace().count() {
+        tracing::debug!(
+            decoded = words.len(),
+            punctuated = text.split_whitespace().count(),
+            "not cutting: the two views of the open line disagree about the words"
+        );
+        return None;
+    }
+    // The policy guarantees a word after `i`; it is the boundary.
+    let t_end = words.get(i + 1)?.start;
+    let prefix = words.get(policy.emitted()..=i)?.to_vec();
+    debug_assert!(
+        t_end <= now,
+        "t_end must be a word already decoded, never the edge of the audio"
+    );
+    policy.cut(i, now);
+    tracing::debug!(
+        words = prefix.len(),
+        t_end = t_end.as_secs_f64(),
+        early_s = (now.saturating_sub(t_end)).as_secs_f64(),
+        "ending a line where the sentence ended, not where the speaker paused"
+    );
+    Some((prefix, t_end))
+}
+
+/// The hypothesis from word `n` on, which is the part still being revised.
+fn tail_words(text: &str, n: usize) -> String {
+    text.split_whitespace()
+        .skip(n)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Both this and [`punctuate_words`] exist, and it is worth writing down why,
 /// because "punctuate in one place" was the first plan. The fast lane's text
 /// reaches the reader twice: while it is still being revised (`Partial`) and

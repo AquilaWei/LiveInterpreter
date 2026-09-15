@@ -247,6 +247,30 @@ pub struct LaneCfg {
     /// from `[asr.fast]`, and only when `punctuation` is on.
     #[serde(default = "punct_model")]
     pub punct_model: String,
+    /// End a line where the restored punctuation says a sentence ended, instead
+    /// of waiting for the endpoint detector (task 1.25, stage 2).
+    ///
+    /// **Default off.** This is the one part of task 1.25 that moves a line
+    /// *boundary*, and moving a boundary is not free: the accurate lane answers
+    /// one whole utterance at a time, so its single answer then has to be
+    /// sliced across the lines by timestamp, which `li_stream` measured at
+    /// 19.1% content WER against 18.7% uncut when the slicing was done at a
+    /// 12-word cap. The argument for trying anyway is that a sentence onset is
+    /// a far better-conditioned place to slice than a width cap -- nobody is
+    /// speaking across it -- but that is a hypothesis, and the switch stays off
+    /// until it is measured on the user's own audio.
+    ///
+    /// What it buys, from task 1.25's E2: where speech runs on without pauses,
+    /// a restored full stop is stable a median 3.52 s (p90 6.72 s) before the
+    /// line it sits in closes. Where the endpoint detector is already cutting
+    /// well there are no mid-line boundaries at all, so this does nothing --
+    /// `ami_meeting` had zero. It fires on the audio the user complained about
+    /// and is silent the rest of the time.
+    ///
+    /// Needs `punctuation`: with no marks there is nothing to cut on, so the
+    /// two never need to be kept in step.
+    #[serde(default)]
+    pub semantic_cut: bool,
 }
 
 fn endpoint_silence_s() -> f32 {
@@ -400,6 +424,7 @@ impl Default for AsrCfg {
                 max_utterance_s: max_utterance_s(),
                 punctuation: punctuation(),
                 punct_model: punct_model(),
+                semantic_cut: false,
             }),
             accurate: Some(LaneCfg {
                 backend: "whispercpp".into(),
@@ -411,6 +436,7 @@ impl Default for AsrCfg {
                 max_utterance_s: max_utterance_s(),
                 punctuation: punctuation(),
                 punct_model: punct_model(),
+                semantic_cut: false,
             }),
             max_line_words: max_line_words(),
         }
@@ -725,6 +751,7 @@ mod tests {
             max_utterance_s: 9.0,
             punctuation: true,
             punct_model: "online-punct-en-2024-08-06".into(),
+            semantic_cut: false,
         };
         let spec = lane.to_spec(&models, Kind::Fast, "en").unwrap();
         assert_eq!(spec.model, root.join("sherpa-onnx-zip"));

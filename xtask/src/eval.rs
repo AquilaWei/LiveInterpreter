@@ -20,7 +20,11 @@ use std::{
 use anyhow::{Context, Result, bail};
 use li_asr::{DeviceRequest, LaneSpec, window::Ring};
 use li_audio::file::FileSource;
-use li_stream::{LaneMode, Stream, StreamConfig, load::Load};
+use li_stream::{
+    LaneMode, Stream, StreamConfig,
+    load::Load,
+    punct::{BoundaryConfig, BoundaryPolicy},
+};
 use li_transcript::{Langs, TranscriptConfig, TranscriptSink, Writer};
 use li_types::{AsrEvent, EngineEvent, FastReason, Lane, TranscriptLine};
 use li_vad::{GateConfig, SileroVad, Vad, VadEvent};
@@ -43,6 +47,10 @@ pub struct Args {
     /// does when `[asr.fast] punctuation` is on. Off here, because this is the
     /// harness that has to be able to show the two runs are the same.
     punct: bool,
+    /// End a line where the restored punctuation says a sentence ended, as
+    /// `[asr.fast] semantic_cut` does (task 1.25 stage 2). Implies `--punct`:
+    /// with no marks there is nothing to cut on.
+    cut: bool,
 }
 
 pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
@@ -58,6 +66,7 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
         endpoint_silence: None,
         max_utterance: None,
         punct: false,
+        cut: false,
     };
     while let Some(flag) = it.next() {
         let mut val = || {
@@ -83,6 +92,10 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
             "--endpoint-silence" => a.endpoint_silence = Some(val()?.parse()?),
             "--max-utterance" => a.max_utterance = Some(val()?.parse()?),
             "--punct" => a.punct = true,
+            "--semantic-cut" => {
+                a.cut = true;
+                a.punct = true;
+            }
             other => bail!("unknown flag {other}"),
         }
     }
@@ -91,7 +104,7 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
             "usage: cargo xtask eval --wav <clip.wav> [--ref <clip.en.txt>] \
              [--lanes dual|fast|accurate] [--fast-model P] [--accurate-model P] \
              [--device D] [--out F] [--transcript DIR] \
-             [--endpoint-silence S] [--max-utterance S] [--punct]"
+             [--endpoint-silence S] [--max-utterance S] [--punct] [--semantic-cut]"
         );
     }
     Ok(a)
@@ -262,6 +275,18 @@ async fn go(args: Args) -> Result<()> {
     };
 
     let mut stream = Stream::new(cfg, args.mode);
+    // The same policy `li_core::Engine` builds, with the same thresholds.
+    let mut cut = args
+        .cut
+        .then(|| BoundaryPolicy::new(BoundaryConfig::default()));
+    let mut cuts = 0usize;
+    let mut cut_declined = 0usize;
+    // Audio time of each early cut in the segment still open. The gain is not
+    // knowable when the cut is made -- it is how much later the endpoint
+    // detector would have closed the line, and that has not happened yet -- so
+    // they wait here until it does.
+    let mut open_cuts: Vec<Duration> = Vec::new();
+    let mut early_s: Vec<f64> = Vec::new();
     let mut load = Load::new();
     let mut vad = SileroVad::new(GateConfig::default())?;
 
@@ -353,7 +378,35 @@ async fn go(args: Args) -> Result<()> {
                             Some(p) => p.restore(&text)?,
                             None => text,
                         };
-                        collect(stream.fast_partial(&text, now), &mut lines, &mut sink)?;
+                        if let Some(policy) = cut.as_mut()
+                            && let Some(i) = policy.observe(&text, now)
+                        {
+                            let words = fast.open_words();
+                            if words.len() != text.split_whitespace().count() {
+                                cut_declined += 1;
+                            } else if let (Some(next), Some(prefix)) =
+                                (words.get(i + 1), words.get(policy.emitted()..=i))
+                            {
+                                let (prefix, t_end) = (prefix.to_vec(), next.start);
+                                policy.cut(i, now);
+                                cuts += 1;
+                                open_cuts.push(now);
+                                collect(
+                                    stream.fast_cut(&prefix, t_end, now),
+                                    &mut lines,
+                                    &mut sink,
+                                )?;
+                            }
+                        }
+                        let shown = match cut.as_ref().map(BoundaryPolicy::emitted) {
+                            Some(n) if n > 0 => text
+                                .split_whitespace()
+                                .skip(n)
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            _ => text,
+                        };
+                        collect(stream.fast_partial(&shown, now), &mut lines, &mut sink)?;
                     }
                     AsrEvent::Final {
                         words,
@@ -366,6 +419,10 @@ async fn go(args: Args) -> Result<()> {
                             Some(p) => p.restore_words(&words)?,
                             None => words,
                         };
+                        if let Some(policy) = cut.as_mut() {
+                            policy.settle(now);
+                            early_s.extend(open_cuts.drain(..).map(|c| (now - c).as_secs_f64()));
+                        }
                         collect(stream.fast_final(&words, now), &mut lines, &mut sink)?;
 
                         // The accurate lane runs once over exactly this
@@ -439,6 +496,14 @@ async fn go(args: Args) -> Result<()> {
             Some(p) => p.restore_words(&words)?,
             None => words,
         };
+        if let Some(policy) = cut.as_mut() {
+            policy.settle(end);
+            early_s.extend(
+                open_cuts
+                    .drain(..)
+                    .map(|c| (end.saturating_sub(c)).as_secs_f64()),
+            );
+        }
         collect(stream.fast_final(&words, end), &mut lines, &mut sink)?;
         // The clip ended mid-utterance. Without this the last thing anyone said
         // never reaches the accurate lane at all, and the transcript ends on
@@ -542,6 +607,19 @@ async fn go(args: Args) -> Result<()> {
         out.push_str(&format!(
             "- {forced_flushes} utterances were cut at the {:.0}s limit rather than at a pause\n",
             cfg.max_segment_s
+        ));
+    }
+    if args.cut {
+        let med = |v: &mut Vec<f64>| {
+            v.sort_by(|a, b| a.total_cmp(b));
+            v.first().map(|_| v[v.len() / 2]).unwrap_or(0.0)
+        };
+        out.push_str(&format!(
+            "- **semantic cut: {cuts} lines ended at a restored full stop**, \
+             a median **{:.2}s of audio earlier** than the endpoint detector then \
+             closed the same utterance; {cut_declined} candidates declined because \
+             the decoded and punctuated views of the line disagreed about the words\n",
+            med(&mut early_s),
         ));
     }
 

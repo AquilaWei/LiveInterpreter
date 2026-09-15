@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>LiveInterpreter — 下載模型</title>
+<style>
+  :root { color-scheme: light dark; --line: #0002; --note: #6b6b6b; --warn: #a5400f; --bar: #3574c2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --line: #fff2; --note: #9a9a9a; --warn: #ffab8a; --bar: #5b9ae0; }
+  }
+  body {
+    margin: 0; padding: 18px 22px;
+    font: 14px/1.6 "Noto Sans CJK TC", "Noto Sans TC", system-ui, sans-serif;
+  }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  p { margin: 8px 0; }
+  p.note { color: var(--note); }
+  p.warn { color: var(--warn); white-space: pre-wrap; }
+  ul { margin: 6px 0; padding-left: 1.4em; color: var(--note); }
+  code { font-family: ui-monospace, monospace; word-break: break-all; }
+  /* A real element rather than <progress>: the indeterminate state here is
+     "hashing a 613 MB file", which has to look different from stalled. */
+  #track { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 14px 0 6px; }
+  #fill { height: 100%; width: 0; background: var(--bar); transition: width .2s linear; }
+  #fill.busy { width: 100% !important; opacity: .35; }
+  #status { display: flex; justify-content: space-between; gap: 10px; color: var(--note); }
+  #status span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  footer { margin-top: 18px; display: flex; gap: 8px; align-items: center; }
+  button { font: inherit; padding: 5px 14px; }
+  #hide { margin-left: auto; }
+</style>
+</head>
+<body>
+  <h1>需要先下載模型</h1>
+
+  <p id="intro">正在確認…</p>
+  <ul id="models"></ul>
+
+  <div id="track"><div id="fill"></div></div>
+  <div id="status"><span id="stage"></span><span id="bytes"></span></div>
+
+  <p class="note">
+    下載到 <code id="dir"></code>。中斷了可以直接再開一次，會從斷掉的地方接續。
+  </p>
+  <p class="warn" id="error" hidden></p>
+
+  <footer>
+    <button id="go">開始下載</button>
+    <button id="hide">稍後再說</button>
+  </footer>
+
+  <script src="download.js"></script>
+</body>
+</html>

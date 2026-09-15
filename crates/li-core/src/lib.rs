@@ -7,6 +7,7 @@
 //! than growing an unbounded queue.
 
 pub mod config;
+pub mod download;
 pub mod engine;
 pub mod models;
 

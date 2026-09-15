@@ -114,9 +114,16 @@ impl Models {
     ///
     /// The error names every path that was tried and points at the manifest,
     /// because the alternative -- "No such file or directory" from somewhere
-    /// three layers down -- is how an afternoon disappears. Task 1.13's
-    /// downloader will turn this into an offer to fetch it; until then it is
-    /// instructions.
+    /// three layers down -- is how an afternoon disappears.
+    ///
+    /// Since task 1.13 this is rarely what a person sees: [`crate::download`]
+    /// asks what is missing before anything tries to load it, and offers to
+    /// fetch it. This is still the backstop for a model nobody can download --
+    /// a hand-placed one that moved, or an id that is not in the manifest.
+    ///
+    /// **It answers about the directory, not the files in it**, for a
+    /// directory-shaped model. `download::plan` deliberately does not rely on
+    /// it for that reason; see the note there.
     pub fn resolve(&self, kind: Kind, id: &str) -> Result<PathBuf> {
         let raw = Path::new(id);
         if raw.is_absolute() || id.contains(std::path::MAIN_SEPARATOR) || id.contains('/') {
@@ -141,8 +148,9 @@ impl Models {
             .collect::<String>();
         bail!(
             "{} model {id:?} is not in the model cache.\n  Looked for:{list}\n  \
-             See `assets/models.toml` for what to download and where it goes \
-             (PLAN §15; the downloader is task 1.13).",
+             Run `liveinterpreter --fetch-models` to download it, or open the \
+             desktop app, which offers to. `assets/models.toml` is where the \
+             files and their hashes are listed (PLAN §15).",
             kind.what()
         )
     }
