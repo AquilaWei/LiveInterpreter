@@ -28,7 +28,7 @@ use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use li_types::AsrEvent;
+use li_types::{AsrEvent, Word};
 use serde::{Deserialize, Serialize};
 
 pub mod device;
@@ -78,6 +78,26 @@ pub trait AsrEngine: Send {
     /// Force the current segment to final, e.g. at end of capture. The engine
     /// owns segment numbering, so this takes no id.
     async fn finalize(&mut self) -> Result<Option<AsrEvent>>;
+
+    /// Word times for the hypothesis that is currently open, without consuming
+    /// it.
+    ///
+    /// Default `Vec::new()`, because most backends have no such thing to
+    /// report: a re-transcribing lane re-reads its whole buffer every pass and
+    /// has no notion of a sentence still in progress. Only a backend that
+    /// segments its own stream can answer.
+    ///
+    /// Task 1.25 stage 2 asks this when the punctuation model says a sentence
+    /// has ended inside a line that is still open. Closing that line needs a
+    /// `t_end`, and the two values that are free are both wrong: `now` is the
+    /// edge of the audio, which would make every early line report a latency of
+    /// about zero and flatter the one gate the feature is judged by, and a
+    /// value past the real boundary silently deletes the head of the next
+    /// accurate-lane line (`li_stream::stream`'s `emitted_through`). So the
+    /// answer has to be a real word onset, and this is where it comes from.
+    fn open_words(&mut self) -> Vec<Word> {
+        Vec::new()
+    }
 
     /// Text the next pass should be biased toward: the tail of what has already
     /// been committed. Phase 0 measured that carrying it improves recognition

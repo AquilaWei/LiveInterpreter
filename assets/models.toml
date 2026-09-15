@@ -1,47 +1,119 @@
-# Model manifest (PLAN §15). Downloaded to ~/.cache/liveinterpreter/models/ on
-# first use and verified by sha256; installers ship none of these; the
-# 2 MB VAD is embedded in the binary instead. Sizes and hashes are filled in by task 1.13.
+# Model manifest (PLAN §15), and the input to task 1.13's downloader.
+#
+# Installers ship none of these: the desktop package is ~71 MB and the models
+# are ~1 GB, so they are fetched on first run into the model cache
+# (`~/.cache/liveinterpreter/models/`, or `$LI_MODEL_DIR`). The 2 MB VAD is the
+# exception -- it is compiled into the binary, see the last entry.
+#
+# `id` is what `config.toml` says; `dest` is the directory it lands in, which
+# is the convention `li_core::models` resolves. Files are listed one by one
+# rather than as a release tarball because the sherpa tarball is 484 MB and
+# half of it is the float export this project does not load: naming the four
+# files that are actually used saves 300 MB of someone's evening.
+#
+# **Every sha256 here was computed from the copy this project measured on**,
+# not copied from upstream. That is the only thing that makes "what you
+# downloaded is what the WER numbers were measured with" a checkable claim.
+# Re-verify with:
+#
+#     sha256sum "$LI_MODEL_DIR/<dest>/<name>"
 
 [[model]]
-id = "zipformer-en-streaming"
-kind = "asr-fast"
-note = "sherpa-onnx streaming Zipformer, LibriSpeech+GigaSpeech. Do NOT substitute the LibriSpeech-only build: 95% WER on a real meeting (task 1.0a)."
+id = "streaming-zipformer-en-2023-06-21"
+kind = "fast"
+dest = "sherpa-onnx-streaming-zipformer-en-2023-06-21"
+base = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/main"
+note = """sherpa-onnx streaming Zipformer, LibriSpeech+GigaSpeech, Apache-2.0 (icefall, via \
+marcoyang/icefall-libri-giga-pruned-transducer-stateless7-streaming-2023-04-04). Do NOT substitute \
+the LibriSpeech-only build: 95% WER on a real meeting (task 1.0a). int8 is what §8 locks in; the \
+float export in the same repo is not downloaded."""
+files = [
+  { name = "encoder-epoch-99-avg-1.int8.onnx", size = 187823992, sha256 = "32c98281c7bd8b63e3e142d007251b37f120572e8fdea9a4f5a79ce22b10ec4f" },
+  { name = "decoder-epoch-99-avg-1.int8.onnx", size = 539246,    sha256 = "093e23c90869898f761f60aa3363f96d43b9c6e5c06a57860c3a5b3407ab8320" },
+  { name = "joiner-epoch-99-avg-1.int8.onnx",  size = 259335,    sha256 = "831477d390e59a61f1b6a6f763b9903e6c6366ff6034f1ddba613be82637122f" },
+  { name = "tokens.txt",                       size = 5048,      sha256 = "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb" },
+]
 
 [[model]]
-id = "whisper-small-en-q5_1"
-kind = "asr-accurate"
-note = "GGML. Locked by task 1.0b/1.0c: RTF 0.053-0.063 on Vulkan, 2.1x streaming headroom. medium is rejected -- it cannot keep up and is not reliably more accurate."
+id = "small.en-q5_1"
+kind = "accurate"
+dest = "ggml"
+base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
+note = """GGML, Apache-2.0 weights (openai/whisper-small.en) in ggerganov's MIT-licensed \
+conversion. Locked by task 1.0b/1.0c: RTF 0.053-0.063 on Vulkan, 2.1x streaming headroom. medium \
+is rejected -- it cannot keep up and is not reliably more accurate."""
+files = [
+  { name = "ggml-small.en-q5_1.bin", size = 190098681, sha256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30" },
+]
 
 [[model]]
-id = "whisper-base-en-q5_1"
-kind = "asr-accurate-degraded"
-note = "No-GPU fallback, locked by task 1.4: full 30s encoder context on CPU keeps up (work factor 0.571) with a 0.0% drop rate. Do NOT instead run small.en with a shortened audio_ctx to buy the speed -- it makes whisper repeat whole clauses (content WER 15.2% -> 36.1%). Still needs li-stream to hold the mean buffer <= 6s."
-
-[[model]]
-id = "silero-vad"
-kind = "vad"
-sha256 = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"
-note = "silero-vad v5 (MIT). Not downloaded: 2.2 MB, embedded in li-vad with include_bytes! from assets/models/. See assets/models/README.md."
+id = "base.en-q5_1"
+kind = "accurate"
+dest = "ggml"
+base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
+note = """No-GPU fallback, locked by task 1.4: full 30s encoder context on CPU keeps up (work \
+factor 0.571) with a 0.0% drop rate. Do NOT instead run small.en with a shortened audio_ctx to buy \
+the speed -- it makes whisper repeat whole clauses (content WER 15.2% -> 36.1%). Still needs \
+li-stream to hold the mean buffer <= 6s. Fetched only when the accurate lane is configured for \
+it, so a GPU machine never pays the 57 MB."""
+files = [
+  { name = "ggml-base.en-q5_1.bin", size = 59721011, sha256 = "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f" },
+]
 
 [[model]]
 id = "nllb-200-distilled-600m-ct2-int8"
 kind = "mt"
-note = """CTranslate2 int8, from JustFrederik/nllb-200-distilled-600M-ct2-int8. Needs model.bin \
-and tokenizer.json; the .safetensors/sentencepiece files in that repo are not used. Locked by \
-task 1.6: beam 4, source cut into clauses of >6 words, final full stop dropped. Do NOT hand it a \
-whole multi-clause line -- it translates one clause and silently drops the rest (33% of lines). \
-It also cannot use context: given the previous sentence it translates *that* instead. \
-CC-BY-NC -- must be replaced before any public or commercial release."""
+dest = "nllb-200-distilled-600m-ct2-int8"
+base = "https://huggingface.co/JustFrederik/nllb-200-distilled-600M-ct2-int8/resolve/main"
+note = """CTranslate2 int8. Locked by task 1.6: beam 4, source cut into clauses of >6 words, final \
+full stop dropped. Do NOT hand it a whole multi-clause line -- it translates one clause and \
+silently drops the rest (33% of lines). It also cannot use context: given the previous sentence it \
+translates *that* instead.
+
+These four files are the whole set, established by loading them and nothing else (2026-09-12).
+`li_mt::nllb` only checks for model.bin and tokenizer.json, but CTranslate2 also needs
+config.json and shared_vocabulary.txt -- without the vocabulary it fails deeper, with
+"Cannot load the target vocabulary from the model directory". The repo's sentencepiece.bpe.model,
+special_tokens_map.json and tokenizer_config.json are not read by anything here.
+
+CC-BY-NC-4.0. This does NOT block downloading it, using it, or giving the app away: NC restricts
+commercial use, not use or redistribution. Replace it before selling anything built on this.
+See NOTICE."""
+files = [
+  { name = "model.bin",             size = 622595991, sha256 = "ed1beaf75134de7505315a5223162f56acff397eff6b50638a500d3936fe707b" },
+  { name = "tokenizer.json",        size = 17331176,  sha256 = "e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665" },
+  { name = "shared_vocabulary.txt", size = 2568098,   sha256 = "a132a83330f45514c2476eb81d1d69b3c41762264d16ce0a7ea982e5d6c728e5" },
+  { name = "config.json",           size = 159,       sha256 = "0c2f6fa2057c7264d052fb4a62ba3476eeae70487acddfa8e779a53a00cbf44c" },
+]
 
 [[model]]
 id = "online-punct-en-2024-08-06"
 kind = "punct"
-sha256 = "9f5e5a72c7d2829635bd074fce92b6bbd5b78da8a52e7ad8ed1be933f366b99d"
-url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-online-punct-en-2024-08-06.tar.bz2"
-note = """CNN-BiLSTM (Edge-Punct-Casing), English. Punctuation AND casing for the fast lane, which \
-emits neither. model.int8.onnx is 7.5 MB; the 29 MB float model buys nothing a subtitle can see. \
-Unpacks to sherpa-onnx-<id>/, the same convention as the fast lane. Task 1.25: p90 4.9-8.6 ms a \
-call, and on the user's own transcripts it recovers 48 of 83 swallowed sentence boundaries at \
-0.84 precision. OPTIONAL -- missing means punct: None and today's behaviour exactly, unlike the \
-two ASR lanes, which fail startup. Feed it LOWER CASE: sherpa's DecodeSentences only ever calls \
-toupper, so all-caps in is all-caps out."""
+dest = "."
+archive = "tar.bz2"
+provides = "sherpa-onnx-online-punct-en-2024-08-06/model.int8.onnx"
+note = """CNN-BiLSTM (Edge-Punct-Casing, Apache-2.0), English. Punctuation AND casing for the fast \
+lane, which emits neither. Task 1.25: p90 4.9-8.6 ms a call, and on the user's own transcripts it \
+recovers 48 of 83 swallowed sentence boundaries at 0.84 precision. OPTIONAL -- missing means \
+punct: None and today's behaviour exactly, unlike the two ASR lanes, which fail startup. Feed it \
+LOWER CASE: sherpa's DecodeSentences only ever calls toupper, so all-caps in is all-caps out.
+
+The only entry that is an archive. Upstream's HuggingFace copy is a .7z, which would be a new
+dependency; the sherpa-onnx release carries the same model as .tar.bz2 and tar+bzip2 are already
+in the lockfile. It unpacks to its own `sherpa-onnx-<id>/` directory, hence dest = ".". The
+29 MB float model inside is unpacked along with the 7.5 MB int8 one that is actually loaded --
+not worth a filtering pass over the archive."""
+files = [
+  { name = "sherpa-onnx-online-punct-en-2024-08-06.tar.bz2", size = 30667839, sha256 = "9f5e5a72c7d2829635bd074fce92b6bbd5b78da8a52e7ad8ed1be933f366b99d", url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-online-punct-en-2024-08-06.tar.bz2" },
+]
+
+# Not downloaded, and deliberately not shaped like the entries above: silero-vad
+# v5 (MIT) is 2.2 MB and lives in the binary via include_bytes! from
+# assets/models/. The VAD decides whether the recognisers run at all, so "the
+# model is missing" is a failure mode worth designing out. See
+# assets/models/README.md, which also explains why the v6 export is not a
+# drop-in replacement.
+[[bundled]]
+id = "silero-vad"
+kind = "vad"
+sha256 = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"

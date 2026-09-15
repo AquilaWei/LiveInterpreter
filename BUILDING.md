@@ -82,19 +82,39 @@ points worse (tasks 1.0b, 1.4). Set `[asr.accurate] model = "base.en-q5_1"` and
 
 ## Models
 
+**You do not have to fetch these by hand.** The desktop app offers to on its
+first run, and the CLI does it on demand:
+
+```
+liveinterpreter --fetch-models
+```
+
+About 1.0 GB, from Hugging Face and one GitHub release. Each file is checked
+against the sha256 in `assets/models.toml` before it is put in place, and an
+interrupted transfer resumes from where it stopped. The hashes in that manifest
+were computed from the copies this project measured its WER on, so a successful
+fetch is also a claim that you have the models the numbers in `docs/` describe.
+
 Everything lands in `~/.cache/liveinterpreter/models/`
 (`%LOCALAPPDATA%\LiveInterpreter\models\` on Windows, which does not follow a
-roaming profile; override either with `LI_MODEL_DIR`). The downloader is task
-1.13; until then, fetch them by hand — `assets/models.toml` says which, and the
-program's error message says where each one goes.
+roaming profile; override either with `LI_MODEL_DIR`):
 
-| what | where |
-|---|---|
-| fast lane | `sherpa-onnx-streaming-zipformer-en-2023-06-21/` |
-| accurate lane | `ggml/ggml-small.en-q5_1.bin` |
-| translation | `nllb-200-distilled-600m-ct2-int8/` (`model.bin` + `tokenizer.json`) |
+| what | where | size |
+|---|---|---|
+| fast lane | `sherpa-onnx-streaming-zipformer-en-2023-06-21/` (4 files, int8) | 180 MB |
+| accurate lane | `ggml/ggml-small.en-q5_1.bin` | 181 MB |
+| translation | `nllb-200-distilled-600m-ct2-int8/` (4 files) | 613 MB |
+| punctuation | `sherpa-onnx-online-punct-en-2024-08-06/` | 29 MB |
+
+Only what the config asks for is fetched: a machine with a GPU never downloads
+the `base.en-q5_1` fallback, and `[asr.fast] punctuation = false` skips the
+punctuation model.
 
 The Silero VAD is compiled into the binary and needs nothing.
+
+**Licences differ between these.** Three are Apache-2.0 and the VAD is MIT, but
+the default translator (NLLB) is CC-BY-NC-4.0 — fine to download, use and give
+away, not fine to sell. See `NOTICE`.
 
 ## Two build-time warts
 
@@ -140,8 +160,9 @@ build tree, `$ORIGIN/../lib/LiveInterpreter` and `.../lib64/...` for the
 installed one (`apps/desktop/src-tauri/build.rs`, `apps/cli/build.rs`).
 whisper.cpp, CTranslate2 and oneDNN need none of this: they are static.
 
-**The packages carry no models.** `~/.cache/liveinterpreter/models/` still has
-to be filled by hand until task 1.13; see "Models" above.
+**The packages carry no models.** They are ~71 MB against ~1 GB of models, so
+the first run downloads them into `~/.cache/liveinterpreter/models/` instead;
+see "Models" above. An app update therefore never re-downloads them.
 
 **Untested on Debian/Ubuntu.** The `.deb` builds and its layout matches the
 `.rpm`, but the Debian package names in `bundle.linux.deb.depends` have not

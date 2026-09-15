@@ -18,6 +18,8 @@ use li_types::{FastReason, Lane};
 pub mod agree;
 pub mod load;
 pub mod merge;
+/// Where a restored full stop is worth ending a line (task 1.25 stage 2).
+pub mod punct;
 pub mod stream;
 /// Word-level text helpers. Public because `li-core` needs the same idea of
 /// what a filler is when it decides whether a line is worth translating -- a

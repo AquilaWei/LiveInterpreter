@@ -42,6 +42,19 @@ struct Line {
     t_end: Duration,
     fast: Option<String>,
     accurate: Option<String>,
+    /// When this line started waiting for the accurate lane, for the
+    /// `promote_after_s` give-up. Normally its own `t_end`.
+    ///
+    /// `None` means it is not waiting yet, which is true of exactly one thing:
+    /// a line [`Stream::fast_cut`] ended early inside an utterance that is
+    /// still being spoken. The accurate lane is not late for such a line -- it
+    /// has not been given the audio, and will not be until the utterance ends.
+    /// Counting from `t_end` there would spend the line's whole patience before
+    /// whisper was even asked, promote it to fast-lane text, and then make
+    /// `drain` advance `emitted_through` past words that had not arrived, so
+    /// `claim` discards them when they do. Measured: that is a whole sentence
+    /// gone from the transcript, not a late one.
+    deadline: Option<Duration>,
 }
 
 pub struct Stream {
@@ -61,6 +74,12 @@ pub struct Stream {
     /// landing there belong to a line that is already on screen and in the
     /// transcript, and must not be re-attributed to the next one.
     emitted_through: Duration,
+    /// How far into the *open* fast-lane segment [`Stream::fast_cut`] has
+    /// already made lines. The segment itself was not cut -- sherpa keeps
+    /// decoding it and will hand the whole thing to [`Stream::fast_final`],
+    /// prefix included -- so this is what stops that prefix being emitted
+    /// twice. Cleared by every `fast_final`.
+    cut_through: Duration,
     now: Duration,
 }
 
@@ -76,6 +95,7 @@ impl Stream {
             unrouted: Vec::new(),
             flushed_through: Duration::ZERO,
             emitted_through: Duration::ZERO,
+            cut_through: Duration::ZERO,
             now: Duration::ZERO,
         }
     }
@@ -134,6 +154,22 @@ impl Stream {
     /// not something to slip in here because the marks happen to have arrived.
     pub fn fast_final(&mut self, words: &[Word], now: Duration) -> Vec<EngineEvent> {
         self.at(now);
+        // `fast_cut` closed lines out of the front of this same segment without
+        // cutting the stream that produced it, so sherpa is handing them back.
+        // Dropping them by audio time rather than by count is deliberate: the
+        // decoded prefix is very nearly append-only but not contractually so,
+        // and time is the alignment this file already trusts everywhere else.
+        let skip = words
+            .iter()
+            .take_while(|w| midpoint(w) < self.cut_through)
+            .count();
+        let words = &words[skip..];
+        self.cut_through = Duration::ZERO;
+        // The utterance is over, so anything cut out of it starts waiting now.
+        for line in &mut self.pending {
+            line.deadline.get_or_insert(self.now);
+        }
+
         let mut out = Vec::new();
         for chunk in words.chunks(self.cfg.max_words.max(1)) {
             let Some((first, last)) = chunk.first().zip(chunk.last()) else {
@@ -155,6 +191,7 @@ impl Stream {
                 t_end,
                 fast: Some(text.clone()),
                 accurate: None,
+                deadline: Some(t_end),
             });
             if self.mode != LaneMode::FastOnly {
                 // Show the completed fast-lane sentence while the accurate lane
@@ -174,6 +211,70 @@ impl Stream {
             }
         }
         self.open = None;
+        out.extend(self.drain());
+        out
+    }
+
+    /// End the open line at a sentence end the fast lane has not reached
+    /// (PLAN task 1.25, stage 2).
+    ///
+    /// `words` is the open hypothesis up to and including the last word of that
+    /// sentence; `t_end` is the onset of the word after it, which the caller
+    /// got from [`li_asr::AsrEngine::open_words`]. **`t_end` must be a real
+    /// word onset**, and the two cheap substitutes are both wrong in ways that
+    /// do not announce themselves:
+    ///
+    /// - too late, and [`Stream::drain`] advances `emitted_through` past words
+    ///   the accurate lane has not delivered yet, so [`claim`] drains and
+    ///   discards the head of the next line -- which surfaces as
+    ///   `AccurateTruncated` on the line *after* the one that was cut, not as a
+    ///   timestamp that looks slightly off;
+    /// - `now` -- the edge of the audio -- reads as a latency of about zero for
+    ///   every line closed this way, which would make the feature's own gate
+    ///   report a triumph it did not earn.
+    ///
+    /// A sentence onset is the best-conditioned cut available: nobody is
+    /// speaking across it, so no word's midpoint is ambiguous about which side
+    /// it belongs to. That is the argument for doing this at all rather than at
+    /// the width cap, which lands mid-clause and measured 19.1% content WER
+    /// against 18.7% uncut (see the crate docs).
+    ///
+    /// **The stream is not cut.** sherpa keeps decoding the same utterance and
+    /// the accurate lane is still handed it whole, so neither engine pays
+    /// anything for this -- the whole reason stage 2 is worth trying and stage
+    /// 3 probably is not.
+    pub fn fast_cut(&mut self, words: &[Word], t_end: Duration, now: Duration) -> Vec<EngineEvent> {
+        self.at(now);
+        let text = text::join(words);
+        let Some(first) = words.first() else {
+            return self.drain();
+        };
+        if text.is_empty() {
+            return self.drain();
+        }
+        let id = self.open.take().unwrap_or_else(|| self.alloc());
+        let t_end = t_end.max(first.start);
+        self.cut_through = t_end;
+        self.pending.push_back(Line {
+            id,
+            t_start: first.start,
+            t_end,
+            fast: Some(text.clone()),
+            accurate: None,
+            deadline: None,
+        });
+        let mut out = Vec::new();
+        if self.mode != LaneMode::FastOnly {
+            // Same shape as the close in `fast_final`: these words will not
+            // change again, only be replaced wholesale by the accurate lane,
+            // which is what makes the span safe to translate as a draft.
+            out.push(EngineEvent::SourcePartial {
+                line_id: id,
+                text,
+                lane: Lane::Fast,
+                closed: Some(t_end),
+            });
+        }
         out.extend(self.drain());
         out
     }
@@ -237,6 +338,7 @@ impl Stream {
                 t_end,
                 fast: None,
                 accurate: Some(text::join(&chunk)),
+                deadline: Some(t_end),
             });
         }
     }
@@ -265,7 +367,8 @@ impl Stream {
             }
 
             let line = self.pending.front().expect("checked above");
-            let timed_out = self.now >= line.t_end + promote_after;
+            // `None` is not yet waiting, so it cannot have waited too long.
+            let timed_out = self.now >= line.deadline.unwrap_or(self.now) + promote_after;
             let decision = if self.mode == LaneMode::FastOnly {
                 line.fast.clone().map(|text| crate::Decision {
                     text,
@@ -625,5 +728,135 @@ mod tests {
         s.fast_final(&say(FAST, 0.0, 0.35), t(1.4));
         assert_eq!(finals(&s.tick(t(9.5))).len(), 1);
         assert!(finals(&settle(&mut s, &say(ACC, 0.0, 0.35), 10.0)).is_empty());
+    }
+
+    /// One endpoint, cut in the middle by a restored full stop.
+    ///
+    /// `say` puts a word every 0.5 s from 10.0, so "green." (index 3) runs
+    /// 11.5-12.0 and "On" (index 4) starts at 12.0 -- that onset is the cut.
+    const RUN_ON: &str = "The build is green. On monday we ship";
+
+    #[test]
+    fn an_early_cut_makes_two_lines_and_the_endpoint_does_not_repeat_the_first() {
+        let mut s = dual();
+        let all = say(RUN_ON, 10.0, 0.5);
+        s.fast_partial("The build is green. On", t(12.1));
+        s.fast_cut(&all[..4], all[4].start, t(12.1));
+        // sherpa never stopped: the endpoint hands back the whole utterance.
+        let out = s.fast_final(&all, t(13.5));
+
+        let shown = partials(&out);
+        assert_eq!(shown.len(), 1, "only the tail is new: {shown:?}");
+        assert_eq!(shown[0].1, "On monday we ship");
+    }
+
+    #[test]
+    fn the_cut_line_ends_on_the_onset_it_was_given_not_on_the_clock() {
+        let mut s = dual();
+        let all = say(RUN_ON, 10.0, 0.5);
+        s.fast_partial("The build is green. On", t(12.1));
+        let out = s.fast_cut(&all[..4], all[4].start, t(12.1));
+        let closed: Vec<f64> = out
+            .iter()
+            .filter_map(|e| match e {
+                EngineEvent::SourcePartial { closed, .. } => closed.map(|c| c.as_secs_f64()),
+                _ => None,
+            })
+            .collect();
+        // 12.0, the onset of "On" -- not 12.1, where the audio had reached.
+        assert_eq!(closed, [12.0]);
+    }
+
+    #[test]
+    fn the_accurate_lane_answer_is_split_at_the_cut() {
+        let mut s = dual();
+        let all = say(RUN_ON, 10.0, 0.5);
+        s.fast_partial("The build is green. On", t(12.1));
+        s.fast_cut(&all[..4], all[4].start, t(12.1));
+        s.fast_final(&all, t(13.5));
+
+        // whisper's one answer for the whole utterance, on its own word times.
+        let heard = say("The build is green. On Monday we ship.", 10.0, 0.5);
+        let out = settle(&mut s, &heard, 13.5);
+
+        let got = finals(&out);
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert_eq!(got[0].text, "The build is green.");
+        assert_eq!(got[1].text, "On Monday we ship.");
+        assert!(got.iter().all(|f| f.lane == Lane::Accurate), "{got:?}");
+    }
+
+    #[test]
+    fn a_cut_line_and_its_tail_get_different_ids_in_order() {
+        let mut s = dual();
+        let all = say(RUN_ON, 10.0, 0.5);
+        s.fast_partial("The build is green. On", t(12.1));
+        let cut = s.fast_cut(&all[..4], all[4].start, t(12.1));
+        let tail = s.fast_final(&all, t(13.5));
+        let (a, b) = (partials(&cut)[0].0, partials(&tail)[0].0);
+        assert_eq!((a, b), (1, 2));
+    }
+
+    #[test]
+    fn an_endpoint_that_arrives_with_nothing_left_emits_nothing_new() {
+        let mut s = dual();
+        let all = say("The build is green.", 10.0, 0.5);
+        s.fast_partial("The build is green.", t(12.0));
+        // Everything decoded so far is already a line; then the endpoint fires.
+        s.fast_cut(&all, t(12.5), t(12.0));
+        let out = s.fast_final(&all, t(12.6));
+        assert_eq!(partials(&out), []);
+    }
+
+    #[test]
+    fn without_a_cut_an_endpoint_behaves_exactly_as_before() {
+        let mut plain = dual();
+        let all = say(RUN_ON, 10.0, 0.5);
+        let before = plain.fast_final(&all, t(13.5));
+        assert_eq!(partials(&before).len(), 1);
+        assert_eq!(partials(&before)[0].1, RUN_ON);
+    }
+
+    #[test]
+    fn a_cut_in_fast_only_mode_still_makes_the_line_but_shows_no_draft() {
+        let mut s = Stream::new(StreamConfig::default(), LaneMode::FastOnly);
+        let all = say(RUN_ON, 10.0, 0.5);
+        s.fast_partial("The build is green. On", t(12.1));
+        let out = s.fast_cut(&all[..4], all[4].start, t(12.1));
+        // FastOnly settles straight out of `line.fast`, so the line is final
+        // already and there is no draft to show.
+        assert_eq!(partials(&out), []);
+        let got = finals(&out);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].text, "The build is green.");
+        assert_eq!(got[0].lane, Lane::Fast);
+    }
+
+    #[test]
+    fn an_early_line_does_not_give_up_while_its_utterance_is_still_being_said() {
+        let mut s = dual();
+        let all = say(RUN_ON, 10.0, 0.5);
+        s.fast_partial("The build is green. On", t(12.1));
+        s.fast_cut(&all[..4], all[4].start, t(12.1));
+
+        // 8 s past the cut line's own t_end (12.0) and the speaker is still
+        // going, so the accurate lane has not been handed anything yet.
+        let out = s.tick(t(21.0));
+        assert_eq!(
+            finals(&out),
+            [],
+            "promoted a line the accurate lane was never asked about"
+        );
+
+        // The utterance ends here, and only now does the clock start.
+        s.fast_final(&all, t(22.0));
+        assert_eq!(finals(&s.tick(t(29.9))), []);
+        let out = s.tick(t(30.1));
+        let got = finals(&out);
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(
+            got.iter()
+                .all(|f| f.reason == Some(FastReason::AccurateTimeout))
+        );
     }
 }

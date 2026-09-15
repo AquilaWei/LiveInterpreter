@@ -23,6 +23,8 @@ use anyhow::{Context, Result, bail};
 use li_audio::{AudioSource, DesktopSource};
 use li_core::Engine;
 use li_core::config::EngineConfig;
+use li_core::download;
+use li_core::models::Models;
 use li_types::{DeviceSelector, EngineEvent, EngineStatus};
 
 #[derive(Debug)]
@@ -36,12 +38,14 @@ struct Args {
     config: Option<PathBuf>,
     wav: Option<PathBuf>,
     list_devices: bool,
+    fetch_models: bool,
 }
 
 const USAGE: &str = "\
 usage: liveinterpreter [options]
 
   --list-devices          list capture devices and exit
+  --fetch-models          download the models this config needs, then exit
   --source S              loopback (default) | mic | <device name>
   --lanes L               dual (default) | fast | accurate
   --device D              auto | cpu | vulkan | cuda | sycl   (accurate lane)
@@ -73,6 +77,7 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
         no_mt: false,
         transcript_dir: None,
         no_transcript: false,
+        fetch_models: false,
         device: None,
         config: None,
         wav: None,
@@ -85,6 +90,7 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
         };
         match flag.as_str() {
             "--list-devices" => a.list_devices = true,
+            "--fetch-models" => a.fetch_models = true,
             "--no-mt" => a.no_mt = true,
             "--no-transcript" => a.no_transcript = true,
             "--source" => a.source = Some(DeviceSelector::from_name(&val()?)),
@@ -127,10 +133,79 @@ fn main() -> Result<()> {
     if args.list_devices {
         return list_devices();
     }
-    tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(run(args))
+        .build()?;
+    if args.fetch_models {
+        return rt.block_on(fetch_models(&args));
+    }
+    rt.block_on(run(args))
+}
+
+/// Download whatever this config needs and stop.
+///
+/// Separate from `run` rather than folded into startup because it is the one
+/// way to exercise the downloader without a display, a sound card, or a model
+/// -- which is exactly the machine a fresh install is on.
+async fn fetch_models(args: &Args) -> Result<()> {
+    let cfg = resolve(args)?;
+    let models = Models::new();
+    let plan = download::plan(&models, &cfg)?;
+    if plan.is_empty() {
+        println!("All models are already in {}.", models.root().display());
+        return Ok(());
+    }
+    println!(
+        "Fetching {} into {}:",
+        human(plan.total_bytes),
+        models.root().display()
+    );
+    for m in plan.models() {
+        println!("  {m}");
+    }
+
+    // Redrawn in place, so a thousand chunks do not become a thousand lines.
+    // stderr because the transfer is progress, not output, and someone piping
+    // this wants the two apart.
+    let mut last = std::time::Instant::now();
+    let mut current = String::new();
+    download::fetch(&plan, |p| match p {
+        download::Progress::Started { name, .. } => current = name,
+        download::Progress::Bytes { done, total } => {
+            // Every chunk is far more often than a terminal can be read.
+            if last.elapsed() >= std::time::Duration::from_millis(200) {
+                last = std::time::Instant::now();
+                let pct = (done * 100).checked_div(total).unwrap_or(0);
+                eprint!(
+                    "\r  {pct:3}%  {} / {}  {current}\x1b[K",
+                    human(done),
+                    human(total)
+                );
+            }
+        }
+        download::Progress::Verifying { name } => {
+            eprint!("\r  checking {name}\x1b[K");
+        }
+        download::Progress::Unpacking { name } => {
+            eprint!("\r  unpacking {name}\x1b[K");
+        }
+        download::Progress::Finished { name } => {
+            eprintln!("\r  done {name}\x1b[K");
+        }
+    })
+    .await?;
+    println!("All models are in {}.", models.root().display());
+    Ok(())
+}
+
+fn human(bytes: u64) -> String {
+    const MB: f64 = 1024.0 * 1024.0;
+    let mb = bytes as f64 / MB;
+    if mb >= 1024.0 {
+        format!("{:.2} GB", mb / 1024.0)
+    } else {
+        format!("{mb:.0} MB")
+    }
 }
 
 fn list_devices() -> Result<()> {

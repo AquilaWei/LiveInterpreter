@@ -5,7 +5,7 @@ resolver = "3"
 members = ["apps/cli", "apps/desktop/src-tauri", "crates/*", "xtask"]
 
 [workspace.package]
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -90,6 +90,19 @@ toml = "0.9"
 toml_edit = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Task 1.13's model downloader. All four were already in the lock file as
+# transitive dependencies -- reqwest through tauri, the other three as build
+# dependencies of sherpa-rs-sys and tauri-codegen -- so naming them here adds
+# no new third-party code and no extra compilation. rustls rather than
+# native-tls for the same reason `ort` picks it above: no OpenSSL headers on
+# the build machine. `stream` is what lets the progress bar move during a
+# 613 MB file rather than after it.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream"] }
+sha2 = "0.10"
+# Only the punctuation model is an archive; see assets/models.toml.
+tar = "0.4"
+bzip2 = "0.4"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
