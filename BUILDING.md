@@ -194,7 +194,7 @@ scripts/flatpak.sh --no-bundle  # build and install only
 | `org.freedesktop.Sdk.Extension.llvm21//25.08` | libclang, for bindgen |
 
 The manifest is `packaging/flatpak/io.github.AquilaWei.LiveInterpreter.yml`.
-Four things about it are worth knowing before changing it:
+Five things about it are worth knowing before changing it:
 
 * **It builds the binaries in the SDK rather than unpacking the `.deb`.**
   Tauri's official flatpak recipe does the latter and it does not work here:
@@ -207,6 +207,10 @@ Four things about it are worth knowing before changing it:
 * **`--device=dri` is not optional**, and `--filesystem=xdg-documents` is the
   one whose absence hurts last: transcripts are written at the end of a
   session, so it would fail after an hour of correct work.
+* **The metainfo repeats the version, and `flatpak list` reads that copy**
+  rather than the binary -- 1.2.2 shipped calling itself 1.2.1 that way.
+  `scripts/flatpak.sh` now refuses to build when the newest `<release>` and
+  the workspace `Cargo.toml` disagree, so a release cannot drift again.
 * **It goes through `scripts/build.sh` too**, for the SPIRV-Headers prefix and
   the oneDNN `lib64` retry -- the same two warts as everywhere else. `glslc` is
   already in the SDK; SPIRV-Headers is a module of its own.
