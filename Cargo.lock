@@ -2481,7 +2481,7 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "li-asr"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "li-audio"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2517,7 +2517,7 @@ dependencies = [
 
 [[package]]
 name = "li-cli"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2532,7 +2532,7 @@ dependencies = [
 
 [[package]]
 name = "li-core"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "bzip2",
@@ -2558,7 +2558,7 @@ dependencies = [
 
 [[package]]
 name = "li-desktop"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "li-audio",
@@ -2576,7 +2576,7 @@ dependencies = [
 
 [[package]]
 name = "li-mt"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2592,7 +2592,7 @@ dependencies = [
 
 [[package]]
 name = "li-stream"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "li-types",
  "tracing",
@@ -2600,7 +2600,7 @@ dependencies = [
 
 [[package]]
 name = "li-transcript"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "jiff",
@@ -2613,7 +2613,7 @@ dependencies = [
 
 [[package]]
 name = "li-types"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2621,7 +2621,7 @@ dependencies = [
 
 [[package]]
 name = "li-vad"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "hound",
@@ -6732,7 +6732,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xtask"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "li-asr",
