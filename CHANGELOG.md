@@ -17,6 +17,12 @@
 
 ---
 
+## 1.2.3 — 2026-09-17
+
+**修正：Flatpak 回報的版本號錯誤。** AppStream metainfo 裡的版本清單漏更新，所以
+`flatpak list` 顯示的版本與程式自己報的不同。建置腳本現在會比對兩者，不一致就停止
+建置。
+
 ## 1.2.2 — 2026-09-17
 
 **新增 Flatpak 打包**（app id `io.github.AquilaWei.LiveInterpreter`）。原因是 rpm/deb

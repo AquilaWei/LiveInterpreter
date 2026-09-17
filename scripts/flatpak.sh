@@ -18,11 +18,25 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ID="io.github.AquilaWei.LiveInterpreter"
-MANIFEST="$REPO/packaging/flatpak/$ID.yml"
+MANIFEST_DIR="$REPO/packaging/flatpak"
+MANIFEST="$MANIFEST_DIR/$ID.yml"
 OUT="$REPO/target/flatpak"
 
 bundle=1
 if [ "${1:-}" = "--no-bundle" ]; then bundle=0; shift; fi
+
+# The AppStream metainfo carries the version a second time, and `flatpak list`
+# reads that one rather than the binary. 1.2.2 shipped advertising itself as
+# 1.2.1 because this file was not appended to. CHANGELOG says the workspace
+# Cargo.toml is the single source of truth for the version, so make the build
+# enforce it rather than trusting anyone to remember.
+version() { sed -n 's/^version = "\(.*\)"$/\1/p' "$REPO/Cargo.toml" | head -1; }
+declared() { sed -n 's/.*<release version="\([^"]*\)".*/\1/p' "$MANIFEST_DIR/$ID.metainfo.xml" | head -1; }
+if [ "$(version)" != "$(declared)" ]; then
+    echo "metainfo 最新的 <release> 是 $(declared)，但 Cargo.toml 是 $(version)。" >&2
+    echo "補一行 <release version=\"$(version)\" date=\"$(date +%F)\" /> 再建。" >&2
+    exit 1
+fi
 
 mkdir -p "$OUT"
 
