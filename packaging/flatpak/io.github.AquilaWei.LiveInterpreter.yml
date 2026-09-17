@@ -82,6 +82,37 @@ modules:
         url: https://github.com/KhronosGroup/SPIRV-Headers.git
         branch: main
 
+  # The runtime ships no CJK font at all -- its share/fonts holds Adwaita,
+  # cantarell, dejavu, gnu-free, caladea, carlito, liberation, noto-emoji and
+  # tex-gyre, and not one of them draws a Chinese character. The bar looks
+  # right on this machine only because the sandbox borrows the host's fonts
+  # through /run/host/fonts. On a host without one, every translated line
+  # would come out as a row of empty boxes: not mojibake, which at least shows
+  # something, but nothing readable at all, and silently -- the log stays
+  # clean. For a program whose whole job is putting Chinese on the screen that
+  # is not a blemish, it is the program not working.
+  #
+  # The subset is the measured choice, not the cautious one. Against 1642 real
+  # translated lines (1283 distinct characters, 27,533 occurrences) this 5.4 MB
+  # file misses exactly one character, once: 遅, which is the Japanese form of
+  # 遲 and a leak from the translator rather than a character Traditional
+  # Chinese wanted. The full 15.7 MB NotoSansCJKtc buys nothing over it here.
+  #
+  # Its family is "Noto Sans TC", the second name in the bar's font stack
+  # (apps/desktop/ui/index.html), so a host that does have "Noto Sans CJK TC"
+  # keeps using its own and this is the floor underneath.
+  - name: noto-sans-tc
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 NotoSansTC-Regular.otf /app/share/fonts/NotoSansTC-Regular.otf
+    sources:
+      - type: file
+        # Pinned to the Sans2.004 tag rather than main: same bytes today, but a
+        # moving branch plus a pinned hash is a build that breaks on someone
+        # else's schedule.
+        url: https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/TC/NotoSansTC-Regular.otf
+        sha256: 5bab0cb3c1cf89dde07c4a95a4054b195afbcfe784d69d75c340780712237537
+
   - name: liveinterpreter
     buildsystem: simple
     build-options:

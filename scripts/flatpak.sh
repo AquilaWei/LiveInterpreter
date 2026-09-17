@@ -53,7 +53,15 @@ flatpak run org.flatpak.Builder \
     "$OUT/build" "$MANIFEST"
 
 if [ "$bundle" -eq 1 ]; then
-    flatpak build-bundle "$OUT/repo" "$OUT/LiveInterpreter.flatpak" "$ID"
+    # --runtime-repo is what makes the bundle installable on a machine that has
+    # never seen org.gnome.Platform//50. It puts a pointer in the bundle, not
+    # the 2.3 GB runtime, so `flatpak install ./LiveInterpreter.flatpak` can add
+    # the remote and pull the dependency itself. Without it the other machine
+    # stops at "No remote refs found", which is the error this very host hit
+    # when flathub existed only as a system remote.
+    flatpak build-bundle \
+        --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+        "$OUT/repo" "$OUT/LiveInterpreter.flatpak" "$ID"
     ls -lh "$OUT/LiveInterpreter.flatpak"
 fi
 

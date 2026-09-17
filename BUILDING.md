@@ -194,7 +194,7 @@ scripts/flatpak.sh --no-bundle  # build and install only
 | `org.freedesktop.Sdk.Extension.llvm21//25.08` | libclang, for bindgen |
 
 The manifest is `packaging/flatpak/io.github.AquilaWei.LiveInterpreter.yml`.
-Five things about it are worth knowing before changing it:
+Seven things about it are worth knowing before changing it:
 
 * **It builds the binaries in the SDK rather than unpacking the `.deb`.**
   Tauri's official flatpak recipe does the latter and it does not work here:
@@ -211,6 +211,14 @@ Five things about it are worth knowing before changing it:
   rather than the binary -- 1.2.2 shipped calling itself 1.2.1 that way.
   `scripts/flatpak.sh` now refuses to build when the newest `<release>` and
   the workspace `Cargo.toml` disagree, so a release cannot drift again.
+* **The bundle carries a `--runtime-repo` pointer**, not the runtime. Without
+  it a machine that has never installed `org.gnome.Platform//50` stops at
+  "No remote refs found"; with it, `flatpak install ./LiveInterpreter.flatpak`
+  adds the remote and pulls the dependency itself.
+* **A CJK font is in the package** (`/app/share/fonts`, Noto Sans TC subset,
+  5.4 MB, OFL-1.1) because the runtime ships none. Borrowing the host's
+  through `/run/host/fonts` works here and produces a row of empty boxes on a
+  host that has no CJK font of its own.
 * **It goes through `scripts/build.sh` too**, for the SPIRV-Headers prefix and
   the oneDNN `lib64` retry -- the same two warts as everywhere else. `glslc` is
   already in the SDK; SPIRV-Headers is a module of its own.

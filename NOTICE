@@ -40,7 +40,23 @@ picture, because "the repo says Apache-2.0" is only true of the code.
       claim. testdata/README.md says the same thing at more length.
 
 --------------------------------------------------------------------------
-2. Not in this repository: the models the program downloads
+2. Not in this repository, but shipped inside the Flatpak
+--------------------------------------------------------------------------
+
+  /app/share/fonts/NotoSansTC-Regular.otf   OFL-1.1
+      Noto Sans CJK, Subset OTF for Traditional Chinese, release Sans2.004,
+      https://github.com/notofonts/noto-cjk
+      Redistributed unmodified. It is in the package because the GNOME
+      runtime ships no CJK font of any kind, and without one every translated
+      line renders as empty boxes on a host that has none of its own. The
+      subset rather than the full 15.7 MB face: measured against 1642 real
+      translated lines it misses one character out of 1283.
+
+      The rpm and deb do not contain it -- they are installed on a system
+      whose own fonts are already there to be used.
+
+--------------------------------------------------------------------------
+3. Not in this repository: the models the program downloads
 --------------------------------------------------------------------------
 
 No installer built from this tree ships a model. The recogniser, translator
