@@ -110,8 +110,16 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
     Ok(a)
 }
 
+/// The shared model cache, by the one rule that decides it.
+///
+/// Spelled out by hand here until task 1.14b: three copies of
+/// `$HOME/.cache/liveinterpreter/models`, which is the exact duplication
+/// `li_types::paths` was written to remove (see its module docs). They went
+/// wrong together when the flatpak work taught that rule about
+/// `XDG_CACHE_HOME`, and a harness that looks somewhere the app does not is a
+/// harness that measures nothing.
 fn cache() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache/liveinterpreter/models")
+    li_types::paths::model_cache()
 }
 
 /// `testdata/foo.wav` -> `testdata/foo.en.txt`, the convention the golden set

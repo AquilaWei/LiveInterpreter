@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=LiveInterpreter
+Comment=即時口譯字幕
+Comment[en]=Real-time interpreting subtitles
+Exec=liveinterpreter-desktop
+Icon=io.github.AquilaWei.LiveInterpreter
+Terminal=false
+Categories=Utility;AudioVideo;
+StartupWMClass=liveinterpreter-desktop

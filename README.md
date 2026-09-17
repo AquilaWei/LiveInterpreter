@@ -21,9 +21,12 @@
 **Linux 桌面，自用穩定。** 懸浮字幕條、設定視窗、逐字稿、安裝包，都在真實音訊上
 跑過一段時間了。
 
-⚠️ **目前實際上只裝得起來在 Fedora 43（或 glibc ≥ 2.43 的系統）**。執行檔是在
-Fedora 43 上建的，比它舊的系統連程式都起不來。**正在改用 Flatpak 解決這件事**
-（任務 1.14b），在那之前請走「從原始碼建」。
+**Flatpak 是建議的安裝方式**，而且理由不只是方便：`.rpm` / `.deb` 裡的執行檔要求
+glibc ≥ 2.43，所以那兩個包實際上只裝得起來在 Fedora 43。Flatpak 自帶 runtime，沒有
+這個限制。
+
+⚠️ **但它到目前為止只在一台機器上裝過**（開發機，Fedora 43 + Intel Arc 140V）。
+它會不會在你的機器上跑起來，還沒有人知道 —— 這正是需要有人試的地方。
 
 Windows 與 Android 的程式碼寫了一部分，但**都暫緩**，現在不要期待它們能用。
 
@@ -38,7 +41,13 @@ Windows 與 Android 的程式碼寫了一部分，但**都暫緩**，現在不�
 到 [Releases](https://github.com/AquilaWei/LiveInterpreter/releases) 下載，然後：
 
 ```bash
-sudo dnf install ./LiveInterpreter-*.x86_64.rpm     # Fedora
+flatpak install --user ./LiveInterpreter.flatpak    # 建議
+```
+
+還是提供 `.rpm` / `.deb`，但**它們需要 glibc ≥ 2.43**：
+
+```bash
+sudo dnf install ./LiveInterpreter-*.x86_64.rpm     # Fedora 43 起
 sudo apt install ./LiveInterpreter_*_amd64.deb      # Debian/Ubuntu（未實測）
 ```
 
@@ -48,18 +57,27 @@ sudo apt install ./LiveInterpreter_*_amd64.deb      # Debian/Ubuntu（未實測�
 要用命令列：
 
 ```bash
-liveinterpreter --fetch-models        # 約 1.0 GB，中斷可續傳
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --fetch-models
 ```
 
-每個檔案下載後都會比對 sha256 才就位，不符就刪掉並報錯。之後更新不會重抓。
+約 1.0 GB，中斷可續傳，每個檔案下載後都會比對 sha256 才就位，不符就刪掉並報錯。
+之後更新程式不會重抓。（用 rpm/deb 裝的話，指令是 `liveinterpreter --fetch-models`。）
 
 ### 3. 跑
 
 ```bash
-liveinterpreter-desktop               # 懸浮字幕條（平常用這個）
-liveinterpreter                       # 命令列版，字幕直接印在 terminal
-liveinterpreter --list-devices        # 聽不到聲音時先看這個
+flatpak run io.github.AquilaWei.LiveInterpreter     # 懸浮字幕條（平常用這個）
 ```
+
+在應用程式選單裡也找得到它。命令列版與裝置列表：
+
+```bash
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --list-devices
+```
+
+用 rpm/deb 裝的話就是 `liveinterpreter-desktop`、`liveinterpreter`、
+`liveinterpreter --list-devices`。
 
 預設擷取**電腦正在播的聲音**。要改聽麥克風：`--source mic`，或在設定視窗裡改。
 
@@ -83,7 +101,11 @@ SPIRV-Headers，而 Fedora 沒有打包它，要自己裝一份——`scripts/bu
 ## 設定
 
 字級、透明度、位置在懸浮條的設定視窗裡改，立刻生效。其餘全部在
-`~/.config/liveinterpreter/config.toml`。
+`~/.config/liveinterpreter/config.toml`（Flatpak 裝的話是
+`~/.var/app/io.github.AquilaWei.LiveInterpreter/config/liveinterpreter/config.toml`；
+設定視窗上方就寫著實際路徑）。
+
+逐字稿預設寫到 `~/Documents/LiveInterpreter/`。
 
 ---
 

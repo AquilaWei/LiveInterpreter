@@ -1,0 +1,171 @@
+# Flatpak manifest (PLAN task 1.14b).
+#
+# Why this exists at all: the binaries in `target/release/` require GLIBC_2.43
+# (`readelf -V`), so the .rpm and .deb of 1.14 only install on Fedora 43 and
+# nothing older -- not "the package names are unverified elsewhere", but "it
+# does not reach main". A flatpak is what makes the thing installable by
+# anyone else. See docs/phase1/TASK_1_14B_FLATPAK_SPIKE.md §4.
+#
+# Which also rules out the cheap path. Tauri's official flatpak recipe unpacks
+# a host-built .deb; measured, that dies with
+# `libm.so.6: version 'GLIBC_2.43' not found` -- host glibc 2.43 against the
+# runtime's 2.42. One version is enough. So the binaries are built here, in
+# the SDK, which is the real cost of this task.
+#
+# `--share=network` during the build is deliberate (user's call 2026-09-17):
+# this ships as a .flatpak bundle on GitHub Releases, not through Flathub,
+# whose builders have no network. `ort` and `sherpa-rs-sys` both use
+# `download-binaries`, and the cargo registry needs fetching. Going offline
+# later needs no code change: ort-sys reads ORT_LIB_PATH / ORT_SKIP_DOWNLOAD
+# and sherpa-rs-sys reads SHERPA_LIB_PATH.
+id: io.github.AquilaWei.LiveInterpreter
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  # libclang, for bindgen. `whisper-rs-sys` and `sherpa-rs-sys` both generate
+  # their bindings at build time, and the SDK ships no clang at all -- the
+  # build dies with `Unable to find libclang`. 21 is the LLVM built against
+  # this runtime's 25.08 base.
+  - org.freedesktop.Sdk.Extension.llvm21
+command: liveinterpreter-desktop
+
+# Every one of these was measured rather than copied from a template; the
+# spike doc says how. The two that are easy to leave out and expensive to
+# miss are the last two.
+finish-args:
+  # Audio. Measured in a real sandbox: this one flag covers BOTH the monitor
+  # sources (system audio, which is the whole product) and the microphone --
+  # no portal, no second flag. Without it PulseAudio fails loudly
+  # (`pa_context_connect() failed`), which is the good kind of failure.
+  - --socket=pulseaudio
+  # Vulkan, for the accurate lane. NOT OPTIONAL AND NOT SAFE TO FORGET:
+  # without it `vkCreateInstance` still succeeds and the only device
+  # enumerated is `llvmpipe`, Mesa's software rasteriser. ggml's backend
+  # registry picks it, logs "Vulkan", and runs on the CPU. A wrong answer
+  # that does not say so. `li-asr` rejects deviceType == CPU as the second
+  # line of defence.
+  - --device=dri
+  # The floating bar forces GDK_BACKEND=x11 (`prefer_x11`, apps/desktop/
+  # src-tauri/src/main.rs) because the global hotkeys of task 1.10 are X11
+  # key grabs. --share=ipc is the standard companion for X11 shared memory.
+  - --socket=x11
+  - --share=ipc
+  # Task 1.13's model downloader: ~1 GB from HuggingFace and one GitHub
+  # release, on first run. Later also 1.16(b)'s update check.
+  - --share=network
+  # Transcripts. `[transcript] dir` defaults to ~/Documents/LiveInterpreter
+  # (crates/li-transcript/src/lib.rs). Leave this out and a whole meeting
+  # transcribes fine and then fails to save.
+  - --filesystem=xdg-documents
+  #
+  # Deliberately NOT here:
+  #   * the model cache needs no flag -- ~/.cache inside the sandbox already
+  #     is ~/.var/app/<id>/cache, and li_types::paths reads HOME.
+  #   * --socket=session-bus is not granted until something is shown to need
+  #     it. Add it only with a symptom attached.
+
+modules:
+  # Fedora does not package SPIRV-Headers (BUILDING.md), and neither does the
+  # GNOME SDK -- checked: /usr/include/spirv is absent, while glslc and the
+  # Vulkan headers are both there, so this module is all that is missing for
+  # whisper.cpp's Vulkan backend. Installing into /app puts it on the default
+  # CMAKE_PREFIX_PATH; scripts/build.sh adds -I$LI_PREFIX/include on top.
+  - name: spirv-headers
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Headers.git
+        branch: main
+
+  - name: liveinterpreter
+    buildsystem: simple
+    build-options:
+      # The Rust toolchain is an SDK extension, so it is not on PATH by
+      # default. Without this the build stops at
+      # `scripts/build.sh: cargo: command not found`.
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm21/bin
+      append-ld-library-path: /usr/lib/sdk/llvm21/lib
+      # flatpak-builder runs every module with the network unshared. Without
+      # this, cargo does not fail -- it retries
+      # `Could not resolve host: index.crates.io` indefinitely, which looks
+      # like a hung build. `ort` and `sherpa-rs-sys` fetch prebuilt binaries
+      # in their build scripts and need it too. This is the line Flathub
+      # would reject; see the header.
+      build-args:
+        - --share=network
+      env:
+        # scripts/build.sh reads $HOME, and cargo needs somewhere writable.
+        HOME: /run/build/liveinterpreter
+        CARGO_HOME: /run/build/liveinterpreter/cargo
+        # Where build.sh looks for SPIRV-Headers. Same variable the host
+        # build uses; only the value differs.
+        LI_PREFIX: /app
+        # bindgen looks for libclang.so by walking a handful of standard
+        # directories; an SDK extension is in none of them, so it has to be
+        # pointed at one.
+        LIBCLANG_PATH: /usr/lib/sdk/llvm21/lib
+    build-commands:
+      # Go through scripts/build.sh rather than bare cargo, for the same two
+      # reasons scripts/package.sh does: the SPIRV-Headers prefix, and the
+      # onednn-src lib64->lib retry (PLAN §19-24). Using the same script here
+      # as on the host keeps them from drifting.
+      - scripts/build.sh build --release -p li-cli -p li-desktop
+
+      - install -Dm755 target/release/liveinterpreter-desktop /app/bin/liveinterpreter-desktop
+      - install -Dm755 target/release/liveinterpreter /app/bin/liveinterpreter
+
+      # The only three libraries that have to travel. They are DT_NEEDED, not
+      # dlopen (`ort` is download-binaries + copy-dylibs, not load-dynamic),
+      # so a missing one kills the process before main. whisper.cpp,
+      # CTranslate2 and oneDNN need nothing here: they are static.
+      #
+      # They are NOT rebuilt in the SDK, and do not need to be: measured with
+      # readelf -V, libonnxruntime.so wants at most GLIBC_2.16 and the two
+      # sherpa libraries GLIBC_2.14. Only our own binaries wanted 2.43.
+      #
+      # /app/bin -> /app/lib/LiveInterpreter is exactly the relative step the
+      # existing runpath already describes ($ORIGIN/../lib/LiveInterpreter,
+      # written for /usr/bin -> /usr/lib in 1.14), so build.rs needs no change.
+      - install -Dm644 target/release/libonnxruntime.so /app/lib/LiveInterpreter/libonnxruntime.so
+      - install -Dm644 target/release/libsherpa-onnx-c-api.so /app/lib/LiveInterpreter/libsherpa-onnx-c-api.so
+      - install -Dm644 target/release/libsherpa-onnx-cxx-api.so /app/lib/LiveInterpreter/libsherpa-onnx-cxx-api.so
+
+      - install -Dm644 packaging/flatpak/io.github.AquilaWei.LiveInterpreter.desktop
+          /app/share/applications/io.github.AquilaWei.LiveInterpreter.desktop
+      - install -Dm644 packaging/flatpak/io.github.AquilaWei.LiveInterpreter.metainfo.xml
+          /app/share/metainfo/io.github.AquilaWei.LiveInterpreter.metainfo.xml
+      - install -Dm644 apps/desktop/src-tauri/icons/128x128.png
+          /app/share/icons/hicolor/128x128/apps/io.github.AquilaWei.LiveInterpreter.png
+      - install -Dm644 apps/desktop/src-tauri/icons/32x32.png
+          /app/share/icons/hicolor/32x32/apps/io.github.AquilaWei.LiveInterpreter.png
+    sources:
+      # `.git` is kept on purpose: apps/*/build.rs stamps LI_BUILD_ID from the
+      # commit, and without it every flatpak would report "unknown commit" --
+      # which is the question that stamp exists to answer.
+      #
+      # **Skip only what git does not track.** The stamp also asks whether the
+      # tree was dirty, and a skipped *tracked* file reads as a deletion: with
+      # `testdata` and `poc` skipped wholesale, a build from a clean commit
+      # stamped itself `56f4f534 2026-09-17, modified`. The build.rs comment
+      # says that stamp exists to be believed, so the list below names the
+      # three things that are genuinely not in the repository. Cost of keeping
+      # the rest: the copy goes from 21 MB to 44 MB, against a build that
+      # fetches several hundred crates.
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - poc/.venv
+          - 08_28_2026_meeting.mp3
+
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /share/cmake
+  - /share/pkgconfig
