@@ -95,9 +95,12 @@ interrupted transfer resumes from where it stopped. The hashes in that manifest
 were computed from the copies this project measured its WER on, so a successful
 fetch is also a claim that you have the models the numbers in `docs/` describe.
 
-Everything lands in `~/.cache/liveinterpreter/models/`
-(`%LOCALAPPDATA%\LiveInterpreter\models\` on Windows, which does not follow a
-roaming profile; override either with `LI_MODEL_DIR`):
+Everything lands in `$XDG_CACHE_HOME/liveinterpreter/models/`, which is
+`~/.cache/liveinterpreter/models/` unless something set that variable — the
+Flatpak does, and there it is the difference between keeping the gigabyte and
+re-downloading it every run. On Windows it is
+`%LOCALAPPDATA%\LiveInterpreter\models\`, which does not follow a roaming
+profile. `LI_MODEL_DIR` overrides all of it:
 
 | what | where | size |
 |---|---|---|
@@ -167,6 +170,50 @@ see "Models" above. An app update therefore never re-downloads them.
 **Untested on Debian/Ubuntu.** The `.deb` builds and its layout matches the
 `.rpm`, but the Debian package names in `bundle.linux.deb.depends` have not
 been resolved against a real apt. The Fedora names have.
+
+**These two packages only install on glibc >= 2.43.** The binaries carry a
+`GLIBC_2.43` requirement (`readelf -V`), which is a property of the machine
+they were built on, not of the packaging. Fedora 43 is 2.43; anything older
+cannot reach `main`. That is what the Flatpak below is for.
+
+## Packaging (Flatpak)
+
+```bash
+scripts/flatpak.sh              # build, install --user, write the bundle
+scripts/flatpak.sh --no-bundle  # build and install only
+```
+
+`flatpak-builder` does not have to be installed: the script runs
+`org.flatpak.Builder`, which is itself a flatpak. The first run downloads about
+1.5 GB of SDK:
+
+| | |
+|---|---|
+| `org.gnome.Platform` / `org.gnome.Sdk` `//50` | the runtime and its SDK |
+| `org.freedesktop.Sdk.Extension.rust-stable//25.08` | Rust 1.98.1 |
+| `org.freedesktop.Sdk.Extension.llvm21//25.08` | libclang, for bindgen |
+
+The manifest is `packaging/flatpak/io.github.AquilaWei.LiveInterpreter.yml`.
+Four things about it are worth knowing before changing it:
+
+* **It builds the binaries in the SDK rather than unpacking the `.deb`.**
+  Tauri's official flatpak recipe does the latter and it does not work here:
+  the host `.deb` wants `GLIBC_2.43` and the runtime has 2.42.
+* **The build is given the network** (`build-args: [--share=network]`), because
+  `ort` and `sherpa-rs-sys` fetch prebuilt libraries in their build scripts and
+  cargo fetches the registry. This is what Flathub would not accept; going
+  offline means a generated `cargo-sources.json` plus `ORT_LIB_PATH` and
+  `SHERPA_LIB_PATH`, and needs no code change.
+* **`--device=dri` is not optional**, and `--filesystem=xdg-documents` is the
+  one whose absence hurts last: transcripts are written at the end of a
+  session, so it would fail after an hour of correct work.
+* **It goes through `scripts/build.sh` too**, for the SPIRV-Headers prefix and
+  the oneDNN `lib64` retry -- the same two warts as everywhere else. `glslc` is
+  already in the SDK; SPIRV-Headers is a module of its own.
+
+Models land in `~/.var/app/io.github.AquilaWei.LiveInterpreter/cache/liveinterpreter/models/`.
+The sandbox's `$HOME` is a tmpfs, so a build that ignored `XDG_CACHE_HOME`
+would throw the gigabyte away on every exit; `li_types::paths` reads it.
 
 There is no auto-update: PLAN §17 1.16 is a version check that only *tells*
 you, because Tauri's in-place updater supports AppImage only and the packages

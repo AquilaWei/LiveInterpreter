@@ -24,7 +24,7 @@
 //! | | Linux/macOS | Windows |
 //! |---|---|---|
 //! | settings | `$XDG_CONFIG_HOME/liveinterpreter/` or `~/.config/liveinterpreter/` | `%APPDATA%\LiveInterpreter\` |
-//! | models | `~/.cache/liveinterpreter/models/` | `%LOCALAPPDATA%\LiveInterpreter\models\` |
+//! | models | `$XDG_CACHE_HOME/liveinterpreter/models/` or `~/.cache/liveinterpreter/models/` | `%LOCALAPPDATA%\LiveInterpreter\models\` |
 //! | transcripts | `~/Documents/LiveInterpreter/` (`[transcript] dir`) | `%USERPROFILE%\Documents\LiveInterpreter\` |
 
 use std::path::PathBuf;
@@ -107,9 +107,20 @@ fn model_cache_from(p: Platform, env: impl Fn(&str) -> Option<String>) -> PathBu
             .or_else(|| home_from(p, &env))
             .unwrap_or_default()
             .join("LiveInterpreter/models"),
-        Platform::Unix => home_from(p, &env)
-            .unwrap_or_default()
-            .join(".cache/liveinterpreter/models"),
+        // `XDG_CACHE_HOME` before `$HOME/.cache`, the same way the config
+        // file honours `XDG_CONFIG_HOME` above. This was written the other way
+        // round until task 1.14b, and in a flatpak the difference is a
+        // gigabyte: the sandbox gives the app a **tmpfs** home and points
+        // `XDG_CACHE_HOME` at the one directory that survives
+        // (`~/.var/app/<id>/cache`). Measured -- the downloader fetched all
+        // 1003 MB, checked every hash, and the models were gone as soon as the
+        // process exited, so every run would have re-downloaded them.
+        Platform::Unix => {
+            let base = env("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home_from(p, &env).unwrap_or_default().join(".cache"));
+            base.join("liveinterpreter/models")
+        }
     }
 }
 
@@ -205,6 +216,53 @@ mod tests {
     fn models_stay_in_dot_cache_on_linux() {
         let p = model_cache_from(Platform::Unix, envs(&[("HOME", "/home/a")]));
         assert_eq!(p, PathBuf::from("/home/a/.cache/liveinterpreter/models"));
+    }
+
+    #[test]
+    fn xdg_cache_home_wins_over_the_home_directory() {
+        // The flatpak case (task 1.14b), and the reason this is not cosmetic:
+        // inside the sandbox `$HOME` is a tmpfs and only the directory named
+        // here survives the process. Getting this wrong throws away a
+        // gigabyte of downloaded models on every exit.
+        let p = model_cache_from(
+            Platform::Unix,
+            envs(&[
+                ("HOME", "/home/a"),
+                ("XDG_CACHE_HOME", "/home/a/.var/app/tw.example.App/cache"),
+            ]),
+        );
+        assert_eq!(
+            p,
+            PathBuf::from("/home/a/.var/app/tw.example.App/cache/liveinterpreter/models")
+        );
+    }
+
+    #[test]
+    fn an_empty_xdg_cache_home_falls_back_like_an_unset_one() {
+        // Same rule as everywhere else here: a launcher that exports
+        // `XDG_CACHE_HOME=` has told us nothing.
+        let p = model_cache_from(
+            Platform::Unix,
+            envs(&[("HOME", "/home/a"), ("XDG_CACHE_HOME", "")]),
+        );
+        assert_eq!(p, PathBuf::from("/home/a/.cache/liveinterpreter/models"));
+    }
+
+    #[test]
+    fn xdg_cache_home_is_ignored_on_windows() {
+        // Same shape as the config rule above: the Windows layout is Windows'
+        // own, not an XDG one wearing a hat.
+        let p = model_cache_from(
+            Platform::Windows,
+            envs(&[
+                ("LOCALAPPDATA", r"C:\Users\a\AppData\Local"),
+                ("XDG_CACHE_HOME", "/tmp/cache"),
+            ]),
+        );
+        assert_eq!(
+            p,
+            PathBuf::from(r"C:\Users\a\AppData\Local").join("LiveInterpreter/models")
+        );
     }
 
     #[test]

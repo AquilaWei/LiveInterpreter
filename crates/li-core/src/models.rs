@@ -6,8 +6,10 @@
 //! the downloader of task 1.13 has one convention to write into and the error
 //! message when a file is missing says the same thing everywhere.
 //!
-//! Everything lives under `~/.cache/liveinterpreter/models/`, overridable with
-//! `LI_MODEL_DIR` (which is how the tests get a directory of their own):
+//! Everything lives under `$XDG_CACHE_HOME/liveinterpreter/models/`, which is
+//! `~/.cache/liveinterpreter/models/` unless something says otherwise --
+//! a flatpak does, and it matters there (`li_types::paths`). `LI_MODEL_DIR`
+//! overrides the lot, which is how the tests get a directory of their own:
 //!
 //! | kind | id | on disk |
 //! |---|---|---|
@@ -251,10 +253,11 @@ mod tests {
 
     #[test]
     fn the_default_root_is_the_shared_model_cache() {
-        assert!(
-            Models::new()
-                .root()
-                .ends_with(".cache/liveinterpreter/models")
-        );
+        // Not `.cache/...`: the leading dot is a property of the *default*
+        // cache directory, and `XDG_CACHE_HOME` is allowed to name one without
+        // it -- which is exactly what a flatpak does
+        // (`~/.var/app/<id>/cache`). Asserting the dot here would have made
+        // this test fail inside the sandbox for being right.
+        assert!(Models::new().root().ends_with("liveinterpreter/models"));
     }
 }

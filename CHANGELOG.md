@@ -17,6 +17,19 @@
 
 ---
 
+## 1.2.2 — 2026-09-17
+
+**新增 Flatpak 打包**（app id `io.github.AquilaWei.LiveInterpreter`）。原因是 rpm/deb
+裡的執行檔要求 glibc ≥ 2.43，只能裝在很新的系統上；Flatpak 自帶 runtime，不受這個限制。
+
+- `packaging/flatpak/` 與 `scripts/flatpak.sh`。主機不需要安裝 flatpak-builder。
+- **修正：在 Flatpak 裡下載的模型，程式一結束就消失。** 沙箱裡的 `$HOME` 是暫存的，
+  模型快取現在跟設定檔一樣依 `XDG_CACHE_HOME` 決定位置。
+- **修正：GPU 索引錯位。** 過濾掉軟體光柵器之後，回報給 whisper.cpp 的裝置編號可能
+  指到別顆 GPU。
+- 精準線明確拒絕軟體光柵器（`llvmpipe`），寧可退到 CPU 模型，也不要看起來在用 GPU
+  實際上在 CPU 上慢慢跑。
+
 ## 1.2.1 — 2026-09-17
 
 只有文件，程式碼沒有變動。實測確認 Flatpak 沙箱裡系統聲音、麥克風與 Vulkan 都能用，

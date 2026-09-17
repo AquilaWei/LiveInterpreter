@@ -21,6 +21,19 @@
 //!   crate's `vulkan` feature does not compile at all. `li-asr` therefore turns
 //!   the GPU backends on through `whisper-rs-sys` and reads the registry here.)
 //!
+//! * **Present and *real* are a third question**, and this one is currently
+//!   answered upstream. Mesa serves Vulkan in software when no driver is
+//!   reachable, and `llvmpipe` enumerates and runs; taking it would mean
+//!   whisper.cpp on the CPU with "Vulkan" in every log line.
+//!   [`is_software_rasterizer`] refuses it — but as of `whisper-rs-sys`
+//!   0.15's ggml, so does ggml-vulkan itself ("If only CPU devices are
+//!   available, return without devices"), and that is what was **measured**
+//!   in a flatpak without `--device=dri`: no device, clean CPU fallback. The
+//!   guard is here because that is an upstream implementation detail rather
+//!   than a contract, and because the raw Vulkan enumeration in the very same
+//!   sandbox *does* offer `llvmpipe` (task 1.14b §2). It has not been seen to
+//!   fire.
+//!
 //! [`Probe::Unavailable`] is left for the case that remains: a build with no
 //! whisper.cpp in it, which has no registry to ask.
 
@@ -114,6 +127,47 @@ pub enum Probe {
     /// This backend cannot be enumerated from here. Not the same as "no
     /// devices": the engine may still find one.
     Unavailable,
+    /// The backend enumerated devices, and every one of them was a software
+    /// rasteriser. Distinct from `Devices(vec![])` because the two want
+    /// different things said: "no GPU here" is a fact about the machine, this
+    /// is a driver or sandbox misconfiguration that would otherwise look like
+    /// success. Carries the names, for the note.
+    SoftwareOnly(Vec<String>),
+}
+
+/// Is this ggml device name a CPU pretending to be a GPU?
+///
+/// Mesa's `llvmpipe` (and `lavapipe`, its Vulkan face) implements the whole
+/// API in software. Running the accurate lane on it means running whisper.cpp
+/// on the CPU while every log line says "Vulkan" -- not slow, not broken, just
+/// quietly answering a different question.
+///
+/// **Belt to ggml's braces, and say so.** A device that reaches this function
+/// has already passed the type filter in [`ggml::devices`], and that filter
+/// would not catch `llvmpipe`: ggml-vulkan reports every Vulkan device as
+/// `GPU` or `IGPU`, never `CPU`, because `is_integrated_gpu` is the only
+/// distinction it draws. What does catch it is one layer further out --
+/// ggml-vulkan's own enumeration skips CPU-type physical devices entirely
+/// ("If only CPU devices are available, return without devices",
+/// `ggml-vulkan.cpp`), so the registry never offers one.
+///
+/// Measured in a flatpak without `--device=dri` (task 1.14b): the accurate
+/// lane fell back to the CPU with no Vulkan device at all, so **this has never
+/// been seen to fire**. It stays because that upstream skip is an
+/// implementation detail rather than a promise, and because the raw Vulkan
+/// enumeration in that same sandbox does hand out `llvmpipe` -- the ICDs are
+/// there, only ggml's filter stands between them and the accurate lane.
+pub fn is_software_rasterizer(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    [
+        "llvmpipe",
+        "lavapipe",
+        "softpipe",
+        "swiftshader",
+        "software rasterizer",
+    ]
+    .iter()
+    .any(|s| n.contains(s))
 }
 
 /// The chosen backend, and what to say about it.
@@ -184,7 +238,11 @@ pub fn probe(accel: Accel) -> Probe {
     }
     #[cfg(feature = "whispercpp")]
     {
-        Probe::Devices(ggml::devices(accel))
+        let (gpus, software) = ggml::devices(accel);
+        if gpus.is_empty() && !software.is_empty() {
+            return Probe::SoftwareOnly(software);
+        }
+        Probe::Devices(gpus)
     }
     #[cfg(not(feature = "whispercpp"))]
     {
@@ -223,8 +281,19 @@ mod ggml {
         }
     }
 
-    pub(super) fn devices(accel: Accel) -> Vec<GpuInfo> {
+    /// The usable devices of one backend, and the names of any software
+    /// rasterisers that were dropped.
+    ///
+    /// **The index is whisper.cpp's, not ours.** `whisper_backend_init_gpu`
+    /// walks `ggml_backend_dev_get(i)` in order, counts every device of type
+    /// GPU or IGPU *across all backends*, and takes `gpu_device` as an index
+    /// into that count. So the counter here has to increment for devices this
+    /// function then throws away -- otherwise rejecting `llvmpipe` at
+    /// position 0 would hand back index 0 for the real GPU at position 1 and
+    /// whisper.cpp would load the rasteriser we just refused.
+    pub(super) fn devices(accel: Accel) -> (Vec<GpuInfo>, Vec<String>) {
         let mut out = Vec::new();
+        let mut software = Vec::new();
         unsafe {
             let mut index = 0;
             for i in 0..sys::ggml_backend_dev_count() {
@@ -240,21 +309,29 @@ mod ggml {
                 {
                     continue;
                 }
+                // Consumed whether or not this device survives the filters
+                // below; see the note above.
+                let here = index;
+                index += 1;
                 let reg = sys::ggml_backend_dev_backend_reg(dev);
                 if reg.is_null() || !matches(accel, &cstr(sys::ggml_backend_reg_name(reg))) {
+                    continue;
+                }
+                let name = cstr(sys::ggml_backend_dev_description(dev));
+                if super::is_software_rasterizer(&name) {
+                    software.push(name);
                     continue;
                 }
                 let (mut free, mut total) = (0usize, 0usize);
                 sys::ggml_backend_dev_memory(dev, &mut free, &mut total);
                 out.push(GpuInfo {
-                    index,
-                    name: cstr(sys::ggml_backend_dev_description(dev)),
+                    index: here,
+                    name,
                     total_bytes: total,
                 });
-                index += 1;
             }
         }
-        out
+        (out, software)
     }
 
     unsafe fn cstr(p: *const std::os::raw::c_char) -> String {
@@ -279,6 +356,13 @@ pub fn select(req: DeviceRequest, compiled: &[Accel], probe: impl Fn(Accel) -> P
 
     let Some(want) = req.as_accel() else {
         // auto: first compiled backend with a device, else CPU.
+        //
+        // A backend that found only a software rasteriser keeps its reason so
+        // the final CPU answer can give it. Nothing was asked for here, so
+        // normally there is no note -- but this one is not "no GPU on this
+        // machine", it is "something is misconfigured", and that is worth
+        // saying even unasked.
+        let mut fake = None;
         for &accel in compiled {
             match probe(accel) {
                 Probe::Devices(gpus) if !gpus.is_empty() => return gpu(accel, &gpus[0], None),
@@ -294,10 +378,14 @@ pub fn select(req: DeviceRequest, compiled: &[Accel], probe: impl Fn(Accel) -> P
                         )),
                     };
                 }
+                Probe::SoftwareOnly(names) => {
+                    fake.get_or_insert_with(|| software_note(accel, &names));
+                    continue;
+                }
                 Probe::Devices(_) => continue,
             }
         }
-        return cpu(None);
+        return cpu(fake);
     };
 
     if want == Accel::Cpu {
@@ -318,6 +406,7 @@ pub fn select(req: DeviceRequest, compiled: &[Accel], probe: impl Fn(Accel) -> P
             want.as_str(),
             want.as_str()
         ))),
+        Probe::SoftwareOnly(names) => cpu(Some(software_note(want, &names))),
         Probe::Unavailable => Selection {
             accel: want,
             gpu_index: 0,
@@ -328,6 +417,29 @@ pub fn select(req: DeviceRequest, compiled: &[Accel], probe: impl Fn(Accel) -> P
             )),
         },
     }
+}
+
+/// The line for the status bar when the only device on offer was a fake one.
+///
+/// It names the device, because the fix depends on which situation this is:
+/// inside a flatpak it means the manifest is missing `--device=dri`, and on a
+/// bare system it means the real driver is not installed.
+///
+/// Deduplicated: a flatpak sandbox enumerates each physical device twice
+/// (measured, task 1.14b), so the raw list says `llvmpipe, llvmpipe`.
+fn software_note(accel: Accel, names: &[String]) -> String {
+    let mut seen: Vec<&str> = Vec::new();
+    for n in names {
+        if !seen.contains(&n.as_str()) {
+            seen.push(n);
+        }
+    }
+    format!(
+        "{} found only a software rasteriser ({}) -- that is the CPU with extra steps, \
+         not a GPU; using the CPU path instead",
+        accel.as_str(),
+        seen.join(", ")
+    )
 }
 
 fn gpu(accel: Accel, info: &GpuInfo, note: Option<String>) -> Selection {
@@ -393,6 +505,76 @@ mod tests {
         let s = select(DeviceRequest::Vulkan, &[Accel::Vulkan], |_| none());
         assert_eq!(s.accel, Accel::Cpu);
         assert!(s.note.unwrap().contains("no vulkan device"));
+    }
+
+    fn software() -> Probe {
+        // Two entries, because that is what a flatpak sandbox actually
+        // enumerates: it scans the ICDs twice (task 1.14b).
+        Probe::SoftwareOnly(vec![
+            "llvmpipe (LLVM 21.1.1, 256 bits)".into(),
+            "llvmpipe (LLVM 21.1.1, 256 bits)".into(),
+        ])
+    }
+
+    #[test]
+    fn a_software_rasteriser_is_refused_even_though_it_is_a_working_device() {
+        // The whole point: llvmpipe answers every question correctly and is
+        // still the wrong answer. Asked for vulkan, given llvmpipe, the right
+        // move is the measured CPU path -- not "Vulkan" in the status bar.
+        let s = select(DeviceRequest::Vulkan, &[Accel::Vulkan], |_| software());
+        assert_eq!(s.accel, Accel::Cpu);
+        let note = s.note.expect("a refusal has to say why");
+        assert!(note.contains("llvmpipe"), "{note}");
+        assert!(note.contains("software rasteriser"), "{note}");
+    }
+
+    #[test]
+    fn the_note_names_the_device_once_however_many_times_it_was_enumerated() {
+        let s = select(DeviceRequest::Vulkan, &[Accel::Vulkan], |_| software());
+        let note = s.note.unwrap();
+        assert_eq!(note.matches("llvmpipe").count(), 1, "{note}");
+    }
+
+    #[test]
+    fn auto_says_why_it_fell_back_when_the_only_device_was_a_fake_one() {
+        // `auto` asked for nothing, so it normally explains nothing. This case
+        // is the exception: a machine offering nothing but a software
+        // rasteriser is misconfigured somewhere, and the user cannot guess
+        // that from silence. (Reaching it needs a ggml that hands the device
+        // over; today's does not -- see `is_software_rasterizer`.)
+        let s = select(DeviceRequest::Auto, &[Accel::Vulkan], |_| software());
+        assert_eq!(s.accel, Accel::Cpu);
+        assert!(s.note.unwrap().contains("llvmpipe"));
+    }
+
+    #[test]
+    fn a_real_device_alongside_a_fake_one_is_still_used() {
+        // `probe` only reports SoftwareOnly when nothing real survived, so a
+        // machine with both keeps its GPU.
+        let s = select(DeviceRequest::Vulkan, &[Accel::Vulkan], |_| {
+            one("Intel(R) Graphics (LNL)")
+        });
+        assert_eq!(s.accel, Accel::Vulkan);
+    }
+
+    #[test]
+    fn the_software_names_are_recognised_and_real_ones_are_not() {
+        for name in [
+            "llvmpipe (LLVM 21.1.1, 256 bits)",
+            "lavapipe",
+            "SwiftShader Device (Subzero)",
+            "Software Rasterizer",
+        ] {
+            assert!(is_software_rasterizer(name), "{name}");
+        }
+        for name in [
+            "Intel(R) Graphics (LNL)",
+            "NVIDIA GeForce RTX 4090",
+            "AMD Radeon RX 7900 XTX",
+            "Apple M3 Pro",
+        ] {
+            assert!(!is_software_rasterizer(name), "{name}");
+        }
     }
 
     #[test]

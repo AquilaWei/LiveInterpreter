@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata (task 1.14b). The rpm/deb never needed this file; a
+     flatpak does, and the id here, the .desktop file name and the manifest's
+     id are the same string on purpose. That is the convention, and the model
+     cache lives under ~/.var/app/<id>/, so the id cannot change after a
+     release without stranding a gigabyte of someone's downloads.
+
+     (No double hyphen anywhere in this comment: XML forbids it inside one,
+     and appstreamcli fails the whole build over it.) -->
+<component type="desktop-application">
+  <id>io.github.AquilaWei.LiveInterpreter</id>
+
+  <name>LiveInterpreter</name>
+  <summary>即時口譯字幕</summary>
+  <summary xml:lang="en">Real-time interpreting subtitles</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <developer id="io.github.aquilawei">
+    <name>AquilaWei</name>
+  </developer>
+
+  <description>
+    <p>
+      擷取系統聲音或麥克風，把英文即時轉成文字，再翻成繁體中文，兩行一起顯示在一條
+      永遠在最上層的懸浮字幕條上。
+    </p>
+    <p xml:lang="en">
+      Captures system audio or a microphone, transcribes English on two lanes
+      (a fast streaming model for the screen, whisper.cpp for the transcript),
+      translates to Traditional Chinese, and shows both lines in a floating
+      always-on-top bar.
+    </p>
+    <p>全部在本機跑，不送任何音訊或文字到外部服務。模型在第一次啟動時下載（約 1 GB）。</p>
+    <p xml:lang="en">
+      Everything runs locally; no audio or text leaves the machine. The models
+      (about 1 GB) are downloaded on first run.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.AquilaWei.LiveInterpreter.desktop</launchable>
+
+  <url type="homepage">https://github.com/AquilaWei/LiveInterpreter</url>
+  <url type="bugtracker">https://github.com/AquilaWei/LiveInterpreter/issues</url>
+
+  <categories>
+    <category>Utility</category>
+    <category>AudioVideo</category>
+  </categories>
+
+  <keywords>
+    <keyword>subtitles</keyword>
+    <keyword>translation</keyword>
+    <keyword>transcription</keyword>
+    <keyword>字幕</keyword>
+    <keyword>口譯</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.2.1" date="2026-09-17" />
+    <release version="1.2.0" date="2026-09-14" />
+    <release version="1.1.0" date="2026-09-11" />
+    <release version="1.0.0" date="2026-09-11" />
+  </releases>
+</component>
