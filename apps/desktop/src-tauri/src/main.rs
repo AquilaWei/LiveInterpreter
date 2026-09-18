@@ -687,16 +687,45 @@ async fn fetch_models(app: AppHandle, state: tauri::State<'_, State>) -> Result<
 
     // Emitted rather than returned: a 1 GB transfer has to show progress while
     // it runs, and a command's return value arrives only at the end.
+    //
+    // Byte counts are sampled here, on the Rust side, as the CLI has always
+    // done (every 200 ms, apps/cli). The downloader reports every chunk the
+    // HTTP stream hands it: measured, 67,642 of them for the default gigabyte,
+    // each one a JS evaluation in the webview for a bar that repaints at most
+    // sixty times a second.
+    //
+    // This is NOT what fixed the bar that never moved (PLAN 1.13), though it
+    // was the first diagnosis and it was tested as one: sampled down to 227
+    // events, the bar still did not move. The cause was that the download
+    // window was missing from capabilities/default.json, so its `listen` was
+    // refused and it never subscribed at all. Whether 67,642 would have hurt
+    // once a listener existed was never measured; there is no reason to find
+    // out.
+    //
+    // Stage changes always go through; they are a handful per file. So does the
+    // byte count that reaches the total, or the bar could stop a hair short of
+    // full on the frame before the window closes.
+    const EVERY: Duration = Duration::from_millis(100);
     let emitter = app.clone();
     let total = plan.total_bytes;
-    download::fetch(&plan, move |p| {
+    let mut last: Option<std::time::Instant> = None;
+    let (mut chunks, mut sent) = (0u64, 0u64);
+    download::fetch(&plan, |p| {
         let (stage, name, done) = match p {
             download::Progress::Started { name, .. } => ("fetching", name, None),
-            download::Progress::Bytes { done, .. } => ("fetching", String::new(), Some(done)),
+            download::Progress::Bytes { done, .. } => {
+                chunks += 1;
+                if last.is_some_and(|t| t.elapsed() < EVERY) && done < total {
+                    return;
+                }
+                last = Some(std::time::Instant::now());
+                ("fetching", String::new(), Some(done))
+            }
             download::Progress::Verifying { name } => ("checking", name, None),
             download::Progress::Unpacking { name } => ("unpacking", name, None),
             download::Progress::Finished { name } => ("done", name, None),
         };
+        sent += 1;
         let _ = emitter.emit_to(
             DOWNLOAD,
             "models://progress",
@@ -705,6 +734,9 @@ async fn fetch_models(app: AppHandle, state: tauri::State<'_, State>) -> Result<
     })
     .await
     .map_err(|e| format!("{e:#}"))?;
+    // The number that says whether the sampling is doing its job, and the one
+    // that says how bad it was without it.
+    tracing::info!(chunks, sent, "models downloaded");
 
     if let Err(e) = state.engine.lock().await.start().await {
         return Err(format!("模型下載完成，但引擎啟動失敗：{e:#}"));
@@ -1200,5 +1232,29 @@ mod tests {
         cfg.offset_y = -9000.0;
         let (_, at) = geometry(ORIGIN, SCREEN, &cfg, 76.0, 1.0);
         assert_eq!((at.x, at.y), (ORIGIN.0 as i32, ORIGIN.1 as i32));
+    }
+
+    /// A window left out of `capabilities/default.json` gets no `core:`
+    /// permission, and nothing says so at build time: the page loads, its
+    /// first `listen` is refused by the ACL, and whatever came after that line
+    /// silently never runs. It happened to the settings window (1.14) and then
+    /// to the download window (1.13, found on the Flatpak's first run), whose
+    /// progress bar never moved. A new window's label goes in this list.
+    #[test]
+    fn every_window_is_granted_the_core_permissions() {
+        let caps: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let windows: Vec<&str> = caps["windows"]
+            .as_array()
+            .expect("capabilities/default.json has a windows list")
+            .iter()
+            .filter_map(|w| w.as_str())
+            .collect();
+        for label in [BAR, SETTINGS, DOWNLOAD] {
+            assert!(
+                windows.contains(&label),
+                "window {label:?} is not in capabilities/default.json, so it cannot listen"
+            );
+        }
     }
 }
