@@ -11,8 +11,12 @@
 //! playback speed and `stop` waits for the pipeline to drain, so the test pays
 //! for `jfk.wav` twice. Worth it -- the alternative is finding out from someone
 //! whose meeting stopped transcribing when they switched microphones.
+//!
+//! Like `li-asr/tests/lanes.rs`, it needs the downloaded models and prints a
+//! SKIP line without them, so CI -- which has none -- stays green. The check
+//! is `download::plan`, the same one the app asks at startup.
 
-use li_core::{Engine, config::EngineConfig};
+use li_core::{Engine, config::EngineConfig, download, models::Models};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_engine_can_be_started_again_after_being_stopped() {
@@ -26,6 +30,14 @@ async fn the_engine_can_be_started_again_after_being_stopped() {
     cfg.mt.backend = "off".into();
     cfg.transcript.enabled = true;
     cfg.transcript.dir = dir;
+    let missing = download::plan(&Models::new(), &cfg).unwrap();
+    if !missing.is_empty() {
+        eprintln!(
+            "SKIP: models not downloaded: {} (set $LI_MODEL_DIR)",
+            missing.models().join(", ")
+        );
+        return;
+    }
     let wav = std::path::Path::new("../../testdata/jfk.wav");
 
     let mut engine = Engine::new(cfg).unwrap();
