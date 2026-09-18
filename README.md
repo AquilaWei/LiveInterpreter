@@ -3,6 +3,8 @@
 [![ci](https://github.com/AquilaWei/LiveInterpreter/actions/workflows/ci.yml/badge.svg)](https://github.com/AquilaWei/LiveInterpreter/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
+**中文** | [English](README.en.md)
+
 **把電腦正在播的英文，即時變成螢幕下方的繁體中文字幕。**
 
 開會、看演講、聽 podcast 時，畫面最下面浮著一條字幕：上面是英文原文，下面是中文翻譯。
