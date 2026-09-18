@@ -5,7 +5,7 @@ resolver = "3"
 members = ["apps/cli", "apps/desktop/src-tauri", "crates/*", "xtask"]
 
 [workspace.package]
-version = "1.3.1"
+version = "1.3.2"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -39,7 +39,7 @@ ort = { version = "2.0.0-rc.13", default-features = false, features = [
 sherpa-rs-sys = { version = "0.6.8", default-features = false, features = ["download-binaries"] }
 # Accurate lane. Builds whisper.cpp from source (cmake + a C++ compiler).
 # GPU backends are opt-in features, never default: a Vulkan build needs
-# SPIRV-Headers, which Fedora has no package for (task 1.0b).
+# SPIRV-Headers, which Fedora has no package for.
 whisper-rs = { version = "0.16", default-features = false, features = ["tracing_backend"] }
 # The GPU features and the device enumeration both go through -sys rather than
 # through whisper-rs. whisper-rs 0.16's `vulkan` feature does not compile: its
@@ -55,15 +55,15 @@ whisper-rs-sys = { version = "=0.15.0", default-features = false }
 # `ruy` is not optional. CTranslate2 refuses to load an int8 model unless one of
 # ruy / oneDNN / MKL is compiled in ("Requested int8 compute type, but the
 # target device or backend do not support efficient int8 computation"), and ruy
-# is the one of the three that also covers the ARM builds of Phase 2, so the
+# is the one of the three that also covers ARM builds (a future Android port), so the
 # desktop and the phone run the same kernels.
 ct2rs = { version = "0.10.1", default-features = false, features = ["ruy"] }
 # OpenCC s2twp, as a pure-Rust reimplementation with the dictionaries compiled
-# into the binary. `opencc-rust`, which PLAN task 1.6 named, binds the C++
+# into the binary. `opencc-rust`, the obvious alternative, binds the C++
 # libopencc and loads .ocd2 files from a system path at run time -- a build-time
 # `opencc-devel` on Fedora and a vendored DLL plus a data directory on Windows
 # and Android. `crates/li-mt/tests/reference.rs` checks this crate against
-# OpenCC 1.1.9's own output on every case in the Phase 0 fixture.
+# OpenCC 1.1.9's own output on every case in the prototype's fixture.
 ferrous-opencc = { version = "0.4", default-features = false, features = ["s2t-conversion"] }
 # NLLB's tokenizer.json, read directly. Default features add oniguruma (C) and
 # esaxx (C++) for a regex pre-tokenizer and a trainer this crate never uses, so
@@ -75,7 +75,7 @@ tokenizers = { version = "0.23", default-features = false, features = ["fancy-re
 # refuses to read the local UTC offset from a multi-threaded process
 # (`IndeterminateOffset`), which this one is, and `chrono` carries a tzdb story
 # per platform. jiff reads /usr/share/zoneinfo on Linux, bundles a tzdb for
-# Windows, and reads Android's concatenated tzdata -- the three targets of §2.5.
+# Windows, and reads Android's concatenated tzdata -- the three platforms this is meant for.
 jiff = "0.2"
 libpulse-binding = "2"
 libpulse-simple-binding = "2"
@@ -90,7 +90,7 @@ toml = "0.9"
 toml_edit = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# Task 1.13's model downloader. All four were already in the lock file as
+# The model downloader. All four were already in the lock file as
 # transitive dependencies -- reqwest through tauri, the other three as build
 # dependencies of sherpa-rs-sys and tauri-codegen -- so naming them here adds
 # no new third-party code and no extra compilation. rustls rather than

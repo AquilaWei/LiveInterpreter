@@ -1,4 +1,4 @@
-//! Pipeline assembly (PLAN §10.3, §11).
+//! Pipeline assembly.
 //!
 //! Every other crate does one job and has no opinion about the others. This is
 //! where they become a program.
@@ -12,7 +12,7 @@
 //! capture stream while it ran -- the audio would pile up and then be dropped,
 //! which is the one failure the two-lane design exists to avoid.
 //!
-//! So (PLAN §11):
+//! So:
 //!
 //! ```text
 //!  [capture thread] --frames--> [pipeline] --segments--> [accurate worker]
@@ -31,7 +31,7 @@
 //!
 //! **Backpressure.** The segment channel is short. If the accurate lane falls
 //! behind far enough to fill it, the segment is dropped and the line it belongs
-//! to is promoted from the fast lane by the ordinary 8 s rule (PLAN §12.2) --
+//! to is promoted from the fast lane by the ordinary 8 s rule --
 //! degraded, but never a hole and never a growing queue. Finalised *text* is
 //! never dropped: the sink channel blocks instead.
 //!
@@ -83,7 +83,7 @@ const SEGMENT_QUEUE: usize = 2;
 /// for.
 ///
 /// Depth alone is not the whole policy. NLLB is 0.36-0.9 s a line on this
-/// machine (task 1.19) and runs on one thread, so a queue that is merely bounded
+/// machine and runs on one thread, so a queue that is merely bounded
 /// still translates lines in the order they were spoken while the bar shows a
 /// sentence from ten seconds ago. [`drop_superseded_drafts`] is the other half:
 /// what a live subtitle owes the reader is the newest line, not every line.
@@ -135,7 +135,7 @@ struct MtJob {
     /// remembered in [`Drafts`] -- no settled text will ever equal it.
     early: bool,
     /// Wall clock for the end of this line's audio, so the sink can report how
-    /// long the reader actually waited. PLAN §7 measures latency from there,
+    /// long the reader actually waited. Latency is measured from there,
     /// not from when the line was queued.
     ///
     /// Meaningless for an `early` job, and not read for one: the prefix's audio
@@ -149,7 +149,7 @@ struct MtJob {
 /// How long the fast lane's words must stop moving before they are translated
 /// on spec.
 ///
-/// 350 ms, from the measurement in task 1.20. On `ami_meeting.wav` the fast
+/// 350 ms, measured. On `ami_meeting.wav` the fast
 /// lane's last change to a line lands 631-647 ms before that line closes -- a
 /// very tight band, because what fills it is `rule2_min_trailing_silence`
 /// counting out its 0.6 s. Mid-sentence pauses long enough to be mistaken for
@@ -187,10 +187,10 @@ impl Speculation {
     /// The fast lane revised the line, or started a new one. The clock restarts:
     /// text that is still moving is not worth a pass.
     ///
-    /// Raw string equality, still, after task 1.25 put punctuation on this
-    /// text. The plan for 1.25 expected to have to weaken this to content
+    /// Raw string equality, still, after punctuation restoration put punctuation on this
+    /// text. The plan expected to have to weaken this to content
     /// words, on the grounds that a full stop appearing and disappearing would
-    /// restart the clock forever and quietly delete task 1.20's whole benefit.
+    /// restart the clock forever and quietly delete the early translation's whole benefit.
     /// It does not, because of *where* the marks are added:
     /// [`crate::engine::punctuate`] is a deterministic function of the raw
     /// hypothesis, and the raw hypothesis has no marks and no casing at all. So
@@ -258,7 +258,7 @@ impl Speculation {
 /// and never fire in a fast one -- exactly backwards for a feature that exists
 /// for speakers who do not pause.
 ///
-/// Task 1.25's E2 measured what it costs: over six clips the mark came and went
+/// Measured cost: over six clips the mark came and went
 /// a median of **0 times** before the line closed, and waiting for the second
 /// sighting gives up 0.32-1.6 s of a 1.9-3.5 s head start. Cheap insurance.
 const CONFIRM_RUNS: u32 = 2;
@@ -286,7 +286,7 @@ const CONFIRM_RUNS: u32 = 2;
 /// * **Being wrong is cheap.** The settled translation overwrites it a second
 ///   or two later, exactly as a draft is overwritten today.
 ///
-/// What it is not: a transcript entry. Only settled text is written (PLAN §11).
+/// What it is not: a transcript entry. Only settled text is written.
 #[derive(Default)]
 struct EarlyCut {
     /// The line these sightings belong to.
@@ -407,8 +407,8 @@ struct Out {
 
 /// Converts a position on the audio timeline into wall time.
 ///
-/// Latency is "the audio for this sentence ends" -> "the text is on screen"
-/// (PLAN §7), and the two ends of that interval are kept by different clocks:
+/// Latency is "the audio for this sentence ends" -> "the text is on screen",
+/// and the two ends of that interval are kept by different clocks:
 /// the engine counts samples, the reader waits in seconds. The offset between
 /// them is not a constant -- `li-audio` drops frames when the pipeline stalls,
 /// and every dropped frame moves the audio timeline earlier against the wall
@@ -506,7 +506,7 @@ impl Engine {
         self.session.is_some()
     }
 
-    /// The transcript files this session is writing (PLAN §13.1).
+    /// The transcript files this session is writing.
     pub fn transcripts(&self) -> &[std::path::PathBuf] {
         self.session.as_ref().map_or(&[], |s| &s.transcripts)
     }
@@ -719,7 +719,7 @@ fn lane_mode(cfg: &EngineConfig) -> Result<LaneMode> {
         (false, true) => LaneMode::AccurateOnly,
         (false, false) => bail!(
             "both ASR lanes are off -- set `[asr.fast]` or `[asr.accurate]` to something \
-             other than `off` (PLAN §8.2)"
+             other than `off`"
         ),
     })
 }
@@ -793,7 +793,7 @@ fn spawn_mt(
             let out = match drafted.reuse(line_id, &src, settled) {
                 Some(text) => Ok(text),
                 // Which lane wrote the marks decides whether they may be the
-                // only place the line is cut. Since task 1.25 both lanes
+                // only place the line is cut. Now both lanes
                 // punctuate, but only whisper *heard* what it wrote: the fast
                 // lane's marks are restored from the words, and trusting them
                 // alone took the fast lane's translation from 1.48 Chinese
@@ -810,7 +810,7 @@ fn spawn_mt(
             // the source row's is. Measured on this machine: 357 ms for a
             // six-word line, 788 ms for eighteen -- it scales with the
             // sentence, so it is decode time, not a fixed cost that could be
-            // tuned away (task 1.19).
+            // tuned away.
             tracing::info!(
                 line_id,
                 settled,
@@ -868,7 +868,7 @@ fn spawn_mt(
 /// translation by at most the pass already in the model.
 ///
 /// Settled lines are never dropped here. They are what `on_translation_final`
-/// writes, and PLAN §11 does not let finalised text disappear.
+/// writes, and finalised text must never disappear.
 fn drop_superseded_drafts(pending: &mut VecDeque<MtJob>) {
     // How much a job is worth keeping, in the order a queue should give it up:
     // a guess is the first thing to go, a settled line never goes at all.
@@ -1058,8 +1058,8 @@ fn spawn_sink(
 /// startup when their model is missing, because a build with no recogniser is
 /// not this program; this one is an improvement to text that is already
 /// correct, so a machine without the 7.5 MB download runs exactly as it did
-/// before task 1.25 and says so at `info`. PLAN §11 lists it as optional and
-/// PLAN §15 has the URL, which is what the message points at.
+/// before and says so at `info`. It is optional, and the message says where
+/// to get it.
 fn load_punct(lane: &LaneCfg, models: &Models, language: &str) -> Option<OnlinePunct> {
     if !lane.punctuation {
         return None;
@@ -1098,8 +1098,8 @@ struct Pipeline {
     /// `&mut`, never shared -- the same rules as `SherpaFast`, for the same
     /// reason (`sherpa.rs:79-82`).
     punct: Option<OnlinePunct>,
-    /// Task 1.25 stage 2, off unless `[asr.fast] semantic_cut` says otherwise.
-    /// `None` is the 1.26 behaviour exactly: lines end where the endpoint
+    /// The semantic cut, off unless `[asr.fast] semantic_cut` says otherwise.
+    /// `None` is the previous behaviour exactly: lines end where the endpoint
     /// detector puts them.
     cut: Option<BoundaryPolicy>,
     frames: mpsc::Receiver<AudioFrame>,
@@ -1186,7 +1186,7 @@ fn spawn_pipeline(mut p: Pipeline) -> Result<JoinHandle<()>> {
                             // The accurate lane runs once over exactly this
                             // utterance: its boundaries come from the fast
                             // lane's own endpoint detector, which is the
-                            // condition whisper is good at (PLAN §12.3).
+                            // condition whisper is good at.
                             offer(&p.seg_tx, &ring, t_start, t_end.min(now), &stream);
                         }
                     }
@@ -1298,12 +1298,12 @@ fn semantic_cut(lane: Option<&LaneCfg>, punctuated: bool) -> Option<BoundaryPoli
         tracing::info!("semantic_cut: off, there is no punctuation model to cut on");
         return None;
     }
-    tracing::info!("semantic_cut: on -- a line may end at a restored full stop (task 1.25 S2)");
+    tracing::info!("semantic_cut: on -- a line may end at a restored full stop");
     Some(BoundaryPolicy::new(BoundaryConfig::default()))
 }
 
 /// Ask the policy whether this hypothesis ends a line, and find the onset that
-/// would close it (PLAN task 1.25, stage 2).
+/// would close it.
 ///
 /// Two separate things have to be true, and only one of them is the policy's.
 /// The policy says a boundary has held long enough to act on; this function
@@ -1312,7 +1312,7 @@ fn semantic_cut(lane: Option<&LaneCfg>, punctuated: bool) -> Option<BoundaryPoli
 ///
 /// **The index and the onset come from different places, so they are checked
 /// against each other.** The index counts words in the punctuated text; the
-/// onsets count words in sherpa's decoded tokens. Task 1.25 measured the
+/// onsets count words in sherpa's decoded tokens. It was measured the
 /// punctuation model leaving the word count alone across ~960 partials with
 /// zero violations, and `restore_words` enforces it on closed lines -- but the
 /// partial path has no such enforcement, and being wrong here is not a
@@ -1366,7 +1366,7 @@ fn tail_words(text: &str, n: usize) -> String {
 /// reaches the reader twice: while it is still being revised (`Partial`) and
 /// once at the endpoint (`Final`). Punctuating only the second one would leave
 /// the bar switching from shouting to sentences at every line boundary -- and
-/// worse, it would break task 1.20. `Speculation` translates the *partial*
+/// worse, it would break the early translation. `Speculation` translates the *partial*
 /// during the silence that ends a sentence and `Drafts::reuse` finds that
 /// answer again by string equality with the closed line's text (29 of 29 hits
 /// on `ami_meeting`). Punctuate one side only and every one of those becomes a
@@ -1396,7 +1396,7 @@ fn punctuate(punct: Option<&mut OnlinePunct>, text: &str) -> String {
 /// from. `restore_words` carries every `start` and `end` through untouched and
 /// refuses the whole line if the word count moved, so this cannot put a
 /// boundary anywhere new -- content WER, drop rate and line count are provably
-/// unchanged by it (task 1.25 S1).
+/// unchanged by it.
 fn punctuate_words(punct: Option<&mut OnlinePunct>, words: Vec<Word>) -> Vec<Word> {
     let Some(p) = punct else { return words };
     match p.restore_words(&words) {
@@ -1441,7 +1441,7 @@ fn offer(
 
 /// Send finalised events on, and queue the translatable ones.
 ///
-/// `blocking_send` for the sink: finalised text is never dropped (PLAN §11).
+/// `blocking_send` for the sink: finalised text is never dropped.
 /// `try_send` for MT: a subtitle with no translation is a subtitle; a queue of
 /// translations for lines that left the screen a minute ago is not.
 ///
@@ -1465,7 +1465,7 @@ fn emit(out: &Out, clock: &Clock, w: &mut Watchers, events: Vec<EngineEvent>) {
                 w.spec.settle();
                 w.early.settle();
                 let audio_end = clock.wall(*t_end);
-                // The gate reading, at last: PLAN §16's G1 and G2 are both
+                // The gate reading, at last: the G1 and G2 latency gates are both
                 // "audio ends -> text on screen", and until now nothing in the
                 // running program measured either. The eval harness did, over
                 // files, which is not the same thing as a capture device and a
@@ -1517,7 +1517,7 @@ fn emit(out: &Out, clock: &Clock, w: &mut Watchers, events: Vec<EngineEvent>) {
                 // measurement taken twice, and subtracting them gives what the
                 // fast lane bought.
                 let audio_end = clock.wall(*t_end);
-                // **This is G1** (PLAN §16): the fast lane's finished sentence
+                // **This is G1**: the fast lane's finished sentence
                 // reaching the screen. The `SourceFinal` for the same line is
                 // G2, and arrives about a second later. Reporting only the
                 // second one would say the source row is a second slower than
@@ -1561,8 +1561,8 @@ fn emit(out: &Out, clock: &Clock, w: &mut Watchers, events: Vec<EngineEvent>) {
 /// A line of nothing but backchannel is not worth translating.
 ///
 /// 20.5% of lines are `Okay.` / `Yeah.` / `Um...`, and NLLB turns every one of
-/// them into a confident hallucination -- "沒有任何問題", "其他國家". Task 1.6
-/// measured it; PLAN §19-20 is the entry. Dropping them here is half the fix
+/// them into a confident hallucination -- "沒有任何問題", "其他國家". This was
+/// measured. Dropping them here is half the fix
 /// and costs nothing.
 fn worth_translating(text: &str) -> bool {
     !li_stream::text::content_words(text).is_empty()
@@ -1669,7 +1669,7 @@ mod tests {
 
     #[test]
     fn settled_lines_are_never_dropped_however_far_behind() {
-        // They are what `on_translation_final` writes. PLAN §11: finalised
+        // They are what `on_translation_final` writes. The rule: finalised
         // text does not disappear because the machine is busy.
         assert_eq!(
             survivors([job(1, true), job(2, true), job(3, true), job(4, false)]),
@@ -1723,7 +1723,7 @@ mod tests {
 
     #[test]
     fn a_sentence_that_ended_is_translated_before_the_line_closes() {
-        // The case task 1.25's E2 measured: the speaker did not pause, so the
+        // The measured case: the speaker did not pause, so the
         // line is still open, but the fast lane's own full stop has been there
         // for two hypotheses running with a word behind it.
         let (o, _sink, mut mt) = out(true);

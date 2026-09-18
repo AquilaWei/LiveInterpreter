@@ -1,4 +1,4 @@
-//! Desktop capture through cpal (PLAN §2.1).
+//! Desktop capture through cpal.
 //!
 //! This is the Windows path, and the fallback for any platform that is neither
 //! Windows nor Linux -- Linux goes through [`crate::pulse`] instead, because
@@ -321,7 +321,7 @@ fn build(sel: DeviceSelector, agc_on: bool, tx: mpsc::Sender<AudioFrame>) -> Res
     // so the number has to come out of the log instead.
     let mut announced = false;
     // The callback does only arithmetic and a non-blocking send. No I/O, no
-    // inference, no lock that another thread can hold (PLAN §11).
+    // inference, no lock that another thread can hold.
     let mut feed = move |input: &[f32]| {
         if !announced {
             announced = true;

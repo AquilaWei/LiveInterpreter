@@ -1,6 +1,6 @@
 [package]
 name = "li-mt"
-description = "Pluggable EN->zh-Hant-TW translation (PLAN §2.4)"
+description = "Pluggable EN->zh-Hant-TW translation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,7 +21,7 @@ tracing = { workspace = true }
 # oneDNN for CTranslate2's int8 GEMM, built from source. Not a default: which
 # kernels to compile in is a decision for the binary being shipped, not for a
 # library. Desktop builds want it -- measured worth ~2x over the ruy kernels
-# that are always compiled in -- and the ARM builds of Phase 2 are expected to
+# that are always compiled in -- and ARM builds (a future Android port) are expected to
 # leave it off and use ruy, which is what CTranslate2 dispatches to there.
 dnnl = ["ct2rs/dnnl"]
 

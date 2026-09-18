@@ -10,5 +10,5 @@ magick icon.png -define icon:auto-resize=128,64,48,32,16 icon.ico
 ```
 
 `PNG32:` is not optional -- ImageMagick will happily hand back a palette PNG,
-and the bundler wants RGBA. `icon.ico` is for the Windows half of task 1.14;
+and the bundler wants RGBA. `icon.ico` is for a Windows package;
 the Linux bundler ignores it.

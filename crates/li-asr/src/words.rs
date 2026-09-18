@@ -8,7 +8,7 @@
 //!
 //! The part worth reading twice is how a word's `end` is set. A piece's
 //! timestamp is its *start*; nothing in either engine's output says where a
-//! word stops. The Phase 0 PoC gave each word the same start and end, and every
+//! word stops. The Python prototype gave each word the same start and end, and every
 //! SRT block came out zero-length (see the note in `li-types`). So a word is
 //! closed at the next word's start, and the last word of a segment at the
 //! segment end the caller passes in.
@@ -37,7 +37,7 @@ pub fn trim_mark(piece: &str) -> &str {
 ///
 /// `t_end` bounds the last word. Callers should not pass the last piece's own
 /// start: the end of the last word is the end of the sentence, and the sentence
-/// end is what the latency metric measures against (PLAN §7), so biasing it
+/// end is what the latency metric measures against, so biasing it
 /// early flatters every number the project is judged on.
 pub fn merge(pieces: &[(String, Duration)], t_end: Duration) -> Vec<Word> {
     let mut words: Vec<Word> = Vec::new();
@@ -48,7 +48,7 @@ pub fn merge(pieces: &[(String, Duration)], t_end: Duration) -> Vec<Word> {
             // after it belong to that new word, not to the one before. Dropping
             // it as empty instead loses the boundary, and "IN NURSING" comes
             // out as "INNURSING" -- which is what this did until the Rust
-            // transcript was diffed word-by-word against the Phase 0 PoC's.
+            // transcript was diffed word-by-word against the Python prototype's.
             words.push(Word {
                 text: text.to_owned(),
                 start: *start,
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn the_last_word_is_closed_by_the_caller_not_by_its_own_start() {
-        // The Phase 0 bug: start == end, and every SRT block was zero-length.
+        // The prototype's bug: start == end, and every SRT block was zero-length.
         let w = merge(&pieces(&[("▁ONLY", 250)]), ms(900));
         assert_eq!(w[0].start, ms(250));
         assert_eq!(w[0].end, ms(900));

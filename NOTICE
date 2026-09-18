@@ -24,7 +24,7 @@ picture, because "the repo says Apache-2.0" is only true of the code.
       LibriSpeech, https://www.openslr.org/12/
       Attribution: Vassil Panayotov, Guoguo Chen, Daniel Povey, Sanjeev
       Khudanpur. Modified: consecutive utterances from one chapter
-      concatenated with 0.7 s gaps (poc/scripts/make_goldens.py).
+      concatenated with 0.7 s gaps.
 
   testdata/ami_meeting*.wav                 CC-BY-4.0
   and their .en.txt references
@@ -32,7 +32,7 @@ picture, because "the repo says Apache-2.0" is only true of the code.
       https://groups.inf.ed.ac.uk/ami/corpus/
       Modified: a 100 s window cut from the Array1-01 single distant
       microphone of one session, with the corpus's own word-level human
-      annotation as the reference (poc/scripts/make_ami_golden.py).
+      annotation as the reference.
 
   testdata/*.zh.txt                         Apache-2.0, but see the caveat
       Chinese references written by Claude and NOT human-verified. Good for

@@ -3,7 +3,7 @@
 //! This is what the evaluation harness records against, so it has to behave
 //! like hardware in the one way that matters: it delivers frames on a fixed
 //! schedule and does **not** slow down when the consumer falls behind. A file
-//! source that waits for a slow ASR pass would hide exactly the failure Phase 0
+//! source that waits for a slow ASR pass would hide exactly the failure the prototype
 //! hit -- the rolling buffer growing without bound because the pipeline could
 //! not keep up -- and every latency number measured against it would be a
 //! fiction.

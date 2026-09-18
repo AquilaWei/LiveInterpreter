@@ -22,7 +22,9 @@ fn main() -> Result<()> {
         Some("pause") => pause::run(pause::parse(args)?),
         Some("punct") => punct::run(punct::parse(args)?),
         Some("score") => score(args),
-        Some("package-models") => bail!("`xtask package-models` lands with task 1.13"),
+        Some("package-models") => {
+            bail!("`xtask package-models` is not implemented; use `liveinterpreter --fetch-models`")
+        }
         Some(other) => bail!("unknown task `{other}`"),
         None => {
             eprintln!("usage: cargo xtask <eval|mt|pause|punct|score|package-models>");
@@ -35,7 +37,7 @@ fn main() -> Result<()> {
 ///
 /// Kept separate from `eval` so a report from an earlier task can be re-scored
 /// with today's metric, and so the Rust port can be checked against
-/// `poc/liveinterpreter_poc/metrics.py` on the same pair of files.
+/// the Python prototype's `metrics.py` on the same pair of files.
 fn score(mut args: impl Iterator<Item = String>) -> Result<()> {
     let (mut reference, mut hypothesis) = (None, None);
     while let Some(flag) = args.next() {

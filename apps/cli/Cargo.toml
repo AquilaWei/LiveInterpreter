@@ -1,6 +1,6 @@
 [package]
 name = "li-cli"
-description = "LiveInterpreter on the terminal (PLAN §17 task 1.8)"
+description = "LiveInterpreter on the terminal"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,7 +26,7 @@ unicode-width = "0.2"
 
 [features]
 # On by default because the accurate lane without a GPU is `base.en`, which is
-# 4-5 WER points worse (task 1.0b/1.4). A machine without SPIRV-Headers builds
+# 4-5 WER points worse. A machine without SPIRV-Headers builds
 # with `--no-default-features` and gets the CPU path. See BUILDING.md.
 default = ["gpu-vulkan", "mt-dnnl"]
 gpu-vulkan = ["li-core/gpu-vulkan"]

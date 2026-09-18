@@ -1,6 +1,6 @@
 [package]
 name = "li-audio"
-description = "Audio capture and level normalisation (PLAN §2.1, §9)"
+description = "Audio capture and level normalisation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

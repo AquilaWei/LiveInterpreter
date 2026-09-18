@@ -1,9 +1,9 @@
-//! Where a model id in `config.toml` turns into a path on disk (PLAN §15).
+//! Where a model id in `config.toml` turns into a path on disk.
 //!
 //! The config file names models by id (`small.en-q5_1`), the engines want a
 //! path, and until now every caller invented its own answer: `xtask eval`
 //! hard-coded two paths and `li_mt` hard-coded a third. One place instead, so
-//! the downloader of task 1.13 has one convention to write into and the error
+//! the downloader has one convention to write into and the error
 //! message when a file is missing says the same thing everywhere.
 //!
 //! Everything lives under `$XDG_CACHE_HOME/liveinterpreter/models/`, which is
@@ -33,7 +33,7 @@ pub const DIR_ENV: &str = "LI_MODEL_DIR";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Fast,
-    /// The fast lane's punctuation and casing (task 1.25). Optional in a way
+    /// The fast lane's punctuation and casing. Optional in a way
     /// the other three are not: a missing one is logged and the engine runs
     /// without it, so `resolve` failing here is not a startup error.
     Punct,
@@ -118,7 +118,7 @@ impl Models {
     /// because the alternative -- "No such file or directory" from somewhere
     /// three layers down -- is how an afternoon disappears.
     ///
-    /// Since task 1.13 this is rarely what a person sees: [`crate::download`]
+    /// Since the downloader this is rarely what a person sees: [`crate::download`]
     /// asks what is missing before anything tries to load it, and offers to
     /// fetch it. This is still the backstop for a model nobody can download --
     /// a hand-placed one that moved, or an id that is not in the manifest.
@@ -152,7 +152,7 @@ impl Models {
             "{} model {id:?} is not in the model cache.\n  Looked for:{list}\n  \
              Run `liveinterpreter --fetch-models` to download it, or open the \
              desktop app, which offers to. `assets/models.toml` is where the \
-             files and their hashes are listed (PLAN §15).",
+             files and their hashes are listed.",
             kind.what()
         )
     }

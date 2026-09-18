@@ -1,5 +1,5 @@
 {
- "generated_by": "sacrebleu 2.6.0 CHRF() with default settings (char_order 6, beta 2), task 1.6",
+ "generated_by": "sacrebleu 2.6.0 CHRF() with default settings (char_order 6, beta 2)",
  "pairs": [
   {
    "ref": "我是薩拉，專案經理。",

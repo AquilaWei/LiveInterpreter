@@ -22,7 +22,7 @@ struct Pending {
 ///
 /// Every append is a single unbuffered `write_all`, so the bytes are in the
 /// page cache before the call returns and killing the process cannot lose a
-/// line that has already been finalised (PLAN §2.6; `tests/crash.rs`). There is
+/// line that has already been finalised (`tests/crash.rs`). There is
 /// deliberately no `BufWriter` and no `sync_all`: the first would reintroduce
 /// exactly the loss this is here to prevent, and the second would fsync the
 /// disk once a sentence to defend against power loss, which is not the failure
@@ -94,7 +94,7 @@ impl Writer {
     }
 
     /// Every file this session is writing, source transcript first. What the
-    /// UI's `open_transcript_folder()` points at (PLAN §13.1).
+    /// UI's `open_transcript_folder()` points at.
     pub fn paths(&self) -> &[PathBuf] {
         &self.paths
     }
@@ -168,7 +168,7 @@ impl TranscriptSink for Writer {
     fn on_source_final(&mut self, line: &TranscriptLine) -> Result<()> {
         if render::one_line(&line.source).is_empty() {
             // `li-stream` keeps the fast lane's text rather than overwriting a
-            // line with nothing (PLAN §12.2), so this should not happen -- and
+            // line with nothing, so this should not happen -- and
             // if it does, an empty subtitle cue is not the way to find out.
             tracing::debug!(line.line_id, "skipping an empty line");
             return Ok(());
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn the_source_transcript_is_a_file_of_its_own_with_no_translation_in_it() {
-        // PLAN §2.6's hard requirement, in one assertion.
+        // The hard requirement, in one assertion.
         let dir = tmp("writer_source_only");
         let mut w = Writer::open(&cfg(&dir, &[Format::Txt], true), &Langs::default()).unwrap();
         let src = w.paths()[0].clone();

@@ -1,6 +1,6 @@
 //! `cargo run -p li-vad --example gate -- <clip.wav>` — run the gate over a
 //! 16 kHz mono wav and report what it decided and what it cost. Used to check
-//! the §7 budget (< 50 ms per window) and to eyeball threshold changes.
+//! the budget (< 50 ms per window) and to eyeball threshold changes.
 
 use std::time::Instant;
 

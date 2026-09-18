@@ -1,6 +1,6 @@
 [package]
 name = "li-desktop"
-description = "The floating subtitle bar (PLAN §13.1)"
+description = "The floating subtitle bar"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

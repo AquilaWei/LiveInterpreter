@@ -1,8 +1,8 @@
-//! The local backend: NLLB-200-distilled-600M, int8, on the CPU (PLAN §8).
+//! The local backend: NLLB-200-distilled-600M, int8, on the CPU.
 //!
-//! MT deliberately does not touch the GPU. Phase 0 measured 0.2-0.3 s a
+//! MT deliberately does not touch the GPU. The prototype measured 0.2-0.3 s a
 //! sentence on the CPU alone, and the accurate ASR lane needs every byte of
-//! VRAM it can get (PLAN §8.1).
+//! VRAM it can get.
 //!
 //! ## What this backend cannot do
 //!
@@ -12,12 +12,12 @@
 //! *context*, with the sentence that was actually asked for dropped. It is a
 //! sentence-level model with no notion of a document, and handing it two
 //! sentences makes it choose one. `ctx` stays in the trait for the cloud and
-//! LLM backends of task 1.12, where it is the whole point.
+//! LLM backends, where it is the whole point.
 //!
 //! ## Licence
 //!
 //! NLLB-200 is **CC-BY-NC**. Fine for a private build; it must be replaced
-//! before anything is published or sold (PLAN §8, §19).
+//! before anything is published or sold.
 
 use std::path::{Path, PathBuf};
 
@@ -44,7 +44,7 @@ pub struct NllbConfig {
     /// 0 lets CTranslate2 choose. The ASR lanes are the ones under time
     /// pressure, so MT is not given the whole machine by default.
     pub threads: usize,
-    /// 4, measured. Greedy (Phase 0's setting) loses 1.5-2.4 chrF and drops
+    /// 4, measured. Greedy (the prototype's setting) loses 1.5-2.4 chrF and drops
     /// clauses more often; 5 costs 70 ms more for nothing.
     pub beam_size: usize,
     /// Cut a line into clauses once it is longer than this (see [`chunk`]).
@@ -52,12 +52,12 @@ pub struct NllbConfig {
     pub max_chunk_words: usize,
     /// Cut a stretch with no punctuation in it on word boundaries once it is
     /// longer than this. 0 leaves it whole, which is what every release up to
-    /// task 1.21 did -- and what left the fast lane, which punctuates nothing,
+    /// the first width cut did -- and what left the fast lane, which punctuates nothing,
     /// handing NLLB 40 words at a time and getting one clause back.
     ///
     /// 6, measured, and the same number as `max_chunk_words` by measurement
     /// rather than by design: 5 is worse and 8 keeps a fifth of the content
-    /// out of the translation. See `docs/phase1/TASK_1_22_FINDINGS.md`.
+    /// out of the translation.
     pub max_run_words: usize,
     /// Refuse to encode more than this. A runaway ASR line must not turn into a
     /// multi-second decode on the MT thread.
@@ -68,7 +68,7 @@ pub struct NllbConfig {
     /// hallucination -- "Hello everybody." comes back as 您的位置: 首頁 and
     /// without the stop as 您好,所有人 -- but across the two scored clips chrF
     /// moved +1.9 and -1.5, and more lines ended mid-clause. A knob, not a
-    /// default; the case it fixes is written up in TASK_1_6_FINDINGS.md §3.3.
+    /// default; the case it fixes is a short line padded into a hallucination.
     pub trim_final_stop: bool,
 }
 
@@ -88,7 +88,7 @@ impl Default for NllbConfig {
 }
 
 /// The shared model cache, the same tree `li-asr` reads and the one task
-/// 1.13's downloader will write. `li-core` normally passes an explicit
+/// downloader writes. `li-core` normally passes an explicit
 /// directory; this is the standalone default.
 pub fn default_model_dir() -> PathBuf {
     li_types::paths::model_cache().join("nllb-200-distilled-600m-ct2-int8")
@@ -108,7 +108,7 @@ impl LocalNllb {
             if !dir.join(f).is_file() {
                 bail!(
                     "MT model incomplete: {} is missing {f}\n\
-                     Fetch nllb-200-distilled-600m-ct2-int8 (PLAN §15) or point \
+                     Fetch nllb-200-distilled-600m-ct2-int8 or point \
                      `[mt] model_dir` at a CTranslate2 directory.",
                     dir.display()
                 );
@@ -178,17 +178,17 @@ impl LocalNllb {
             .to_string())
     }
 
-    /// One blocking pass. `li-core` runs this on a blocking thread (PLAN §11).
+    /// One blocking pass. `li-core` runs this on a blocking thread.
     ///
     /// `marks` says where `src`'s punctuation came from; see [`chunk::Marks`].
     /// It is the caller's to answer because only the caller knows which lane
-    /// produced the line, and since task 1.25 both of them punctuate.
+    /// produced the line, and now both of them punctuate.
     pub fn translate_blocking(&self, src: &str, marks: Marks) -> Result<String> {
         Ok(self.zh.finish(&self.pieces(src, marks)?))
     }
 
     /// What the model itself produced, one string per clause, before OpenCC and
-    /// before punctuation. Exposed so a test can compare it against the Phase 0
+    /// before punctuation. Exposed so a test can compare it against the prototype's
     /// Python implementation without the post-processing in the way.
     pub fn pieces(&self, src: &str, marks: Marks) -> Result<Vec<String>> {
         let pieces = chunk::split(src, self.cfg.max_chunk_words, self.cfg.max_run_words, marks);

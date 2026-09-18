@@ -1,8 +1,8 @@
 //! Does the transcript actually survive being killed?
 //!
-//! PLAN §2.6 asks for lines to be appended as they are finalised "so that an
-//! unexpected shutdown keeps what was already recognised", and PLAN §17 signs
-//! task 1.7 off on exactly that: content still there after `kill -9`. Every
+//! Lines must be to be appended as they are finalised "so that an
+//! unexpected shutdown keeps what was already recognised", and this is the
+//! test of exactly that: content still there after `kill -9`. Every
 //! plausible way of getting this wrong -- a `BufWriter`, a rewrite-on-close, a
 //! record held back until its translation arrives -- passes the ordinary unit
 //! tests and fails this one.

@@ -1,11 +1,11 @@
-//! The dual-lane state machine (PLAN §12.2).
+//! The dual-lane state machine.
 //!
 //! One subtitle line has one `line_id` for its whole life. The fast lane opens
 //! it and keeps rewriting it while the words are still arriving; the accurate
 //! lane later replaces the text in place, under the same id, so the UI swaps a
 //! line rather than appending one. Whichever lane ends up owning the line, its
 //! `[t_start, t_end)` was fixed when the fast lane closed it -- which is also
-//! why sentence spans come out right here, where the Phase 0 PoC wrote the same
+//! why sentence spans come out right here, where the Python prototype wrote the same
 //! timestamp into both ends and produced zero-length SRT blocks.
 //!
 //! **There are no clocks in this file.** Every entry point takes `now` as a
@@ -24,14 +24,14 @@ use crate::{StreamConfig, merge, text};
 
 /// Which lanes are running. Both single-lane modes are supported settings, not
 /// degraded states: a machine with no GPU turns the accurate lane off, and a
-/// phone on battery runs the fast lane alone (PLAN §8.2, §12.2).
+/// phone on battery runs the fast lane alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaneMode {
     Dual,
     /// No accurate lane. The transcript and the translator take fast-lane text,
     /// marked as such.
     FastOnly,
-    /// No fast lane: Phase 0 behaviour, at Phase 0 latency (~2 s).
+    /// No fast lane: single-lane behaviour, at ~2 s latency.
     AccurateOnly,
 }
 
@@ -143,14 +143,14 @@ impl Stream {
     /// sherpa's own rule lets an utterance run to 12 s -- so a long run is cut
     /// into several lines by word count.
     ///
-    /// Not by punctuation, even though task 1.25 means these words may now
+    /// Not by punctuation, even though these words may now
     /// carry some. Cutting here is free of consequences only because every
     /// piece of one endpoint is emitted in the same instant, into a span the
     /// accurate lane has already been handed whole; a cut that moved a line
     /// *boundary* would make the accurate lane's one answer be sliced across
     /// two lines by timestamp, which is measured and not free (see the crate
     /// docs: 19.1% content WER at a 12-word cap against 18.7% uncut). That is
-    /// task 1.25's stage 2, behind its own switch and its own measurements --
+    /// the semantic cut, behind its own switch and its own measurements --
     /// not something to slip in here because the marks happen to have arrived.
     pub fn fast_final(&mut self, words: &[Word], now: Duration) -> Vec<EngineEvent> {
         self.at(now);
@@ -215,8 +215,7 @@ impl Stream {
         out
     }
 
-    /// End the open line at a sentence end the fast lane has not reached
-    /// (PLAN task 1.25, stage 2).
+    /// End the open line at a sentence end the fast lane has not reached.
     ///
     /// `words` is the open hypothesis up to and including the last word of that
     /// sentence; `t_end` is the onset of the word after it, which the caller
@@ -411,7 +410,7 @@ fn midpoint(w: &Word) -> Duration {
 /// Take the words whose midpoint falls before `t_end`.
 ///
 /// Alignment is by audio time, never by matching text: the two lanes disagree
-/// about the words, which is the whole reason both exist (PLAN §12.2). Taking
+/// about the words, which is the whole reason both exist. Taking
 /// from the front also sweeps up anything earlier that no line claimed, so a
 /// stray word cannot sit in front of the queue forever.
 fn claim(words: &mut Vec<Word>, t_end: Duration) -> Vec<Word> {
@@ -520,7 +519,7 @@ mod tests {
     #[test]
     fn a_line_keeps_one_id_from_the_first_partial_to_the_accurate_override() {
         // The UI requirement behind this: the accurate lane replaces the line
-        // in place. A new id would push a second line onto the bar (PLAN §12.2).
+        // in place. A new id would push a second line onto the bar.
         let mut s = dual();
         let ev = s.fast_partial("THIS IS", t(0.6));
         assert_eq!(partials(&ev), [(1, "THIS IS".into(), Lane::Fast)]);
@@ -553,7 +552,7 @@ mod tests {
 
     #[test]
     fn the_span_is_the_fast_lanes_and_the_override_does_not_move_it() {
-        // Phase 0 wrote the same timestamp into both ends of every sentence and
+        // The prototype wrote the same timestamp into both ends of every sentence and
         // produced zero-length SRT blocks. The span is fixed when the fast lane
         // closes the line; the accurate lane only changes the words.
         let mut s = dual();
@@ -604,7 +603,7 @@ mod tests {
 
     #[test]
     fn a_repetition_loop_does_not_reach_the_transcript() {
-        // The mirror image (task 1.4): the accurate lane is not short, it is
+        // The mirror image: the accurate lane is not short, it is
         // four times too long. Words verbatim from the cropped-encoder run.
         let fast = "AND THEN WHEN YOU GO ON THE MENU YOU CAN SELECT";
         let loop_text = "and then when you go on the menu, you can select \
@@ -622,7 +621,7 @@ mod tests {
     fn an_empty_answer_never_blanks_a_line() {
         // The accurate lane committed past this line without producing a single
         // word inside it. Overwriting would put an empty line on screen and an
-        // empty line in the transcript file §2.6 requires to be a record.
+        // empty line in the transcript file, which has to be a record.
         let mut s = dual();
         s.fast_final(&say(FAST, 0.0, 0.35), t(1.4));
         let out = finals(&settle(&mut s, &say("later on", 2.0, 0.3), 5.0));

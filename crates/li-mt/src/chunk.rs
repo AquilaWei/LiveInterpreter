@@ -2,12 +2,12 @@
 //!
 //! NLLB-200 is a *sentence-level* model. Handed a line with more than one
 //! clause it routinely translates the first one and stops -- measured on the
-//! task 1.5 accurate-lane output, **33% of lines came back ending in a comma**,
+//! accurate-lane output, **33% of lines came back ending in a comma**,
 //! mid-clause, and no decoding parameter moved that number (beam 1/2/4/5,
 //! length penalty 1.0/2.0, `no_repeat_ngram_size`: all 33-41%). Cutting the
 //! line at its own punctuation first and translating the pieces separately took
 //! it to 7.4%, and chrF against the zh-TW reference from 8.7 to 16.4 on
-//! `read_clean`. See `docs/phase1/TASK_1_6_FINDINGS.md`.
+//! `read_clean`.
 //!
 //! The cut is preferably made at punctuation the speaker's own words carry, so
 //! a piece is usually a clause rather than a fixed-width window.
@@ -25,7 +25,7 @@
 //! **0.63 Chinese characters per English word, against 1.55 in the reference**:
 //! well over a third of every long line was simply not translated. chrF was
 //! 10.4 against 19.4 for the same clip's punctuated accurate-lane transcript
-//! through the same harness (task 1.6).
+//! through the same harness.
 //!
 //! So a stretch with nowhere to cut is cut into equal parts of at most
 //! [`NllbConfig::max_run_words`](crate::NllbConfig::max_run_words) words. Every
@@ -34,7 +34,7 @@
 //! is a fragment where a 6-word cut at a comma is a clause. It is a separate
 //! setting because it can be turned off and because the two cuts are different
 //! acts, not because the widths came out different. See
-//! `docs/phase1/TASK_1_22_FINDINGS.md` for the sweep.
+//! the width sweep.
 
 use std::ops::Range;
 
@@ -46,7 +46,7 @@ const CLAUSE: &[char] = &[',', ';', ':'];
 /// Where a line's punctuation came from, and therefore whether it is allowed to
 /// be the only place the line is cut.
 ///
-/// The distinction did not exist before task 1.25, because there was only one
+/// The distinction did not exist before punctuation restoration, because there was only one
 /// answer: the accurate lane heard its marks and the fast lane had none, so
 /// "does this text contain a full stop" told you both things at once. Now the
 /// fast lane has marks too, put there by a model reading the words -- and
@@ -69,10 +69,10 @@ pub enum Marks {
 ///
 /// A piece with no punctuation left to cut at is cut on word boundaries after
 /// `run_words`; `run_words == 0` leaves it whole, which is the behaviour of
-/// every release up to task 1.21.
+/// every release before the width cut.
 ///
 /// Pieces are trimmed and never empty. `max_words == 0` turns splitting off
-/// entirely, which is how the Phase 0 behaviour is reproduced in tests.
+/// entirely, which is how the prototype's behaviour is reproduced in tests.
 pub fn split(text: &str, max_words: usize, run_words: usize, marks: Marks) -> Vec<&str> {
     if max_words == 0 {
         let whole = text.trim();
@@ -84,10 +84,10 @@ pub fn split(text: &str, max_words: usize, run_words: usize, marks: Marks) -> Ve
     }
     // Heard marks turn the width cut off, because halving a genuine 14-word
     // clause measured worse than leaving it whole: chrF 19.4 -> 16.7 on
-    // `read_clean`'s accurate-lane transcript, 17.4 -> 15.7 on `read_hard`'s
-    // (task 1.22). So the accurate lane goes through here exactly as it did.
+    // `read_clean`'s accurate-lane transcript, 17.4 -> 15.7 on `read_hard`'s.
+    // So the accurate lane goes through here exactly as it did.
     //
-    // Restored marks do not, and task 1.25 had to measure that to believe it.
+    // Restored marks do not, and it took a measurement to believe it.
     // Turning the cut off for them -- which is what "the line now has real
     // punctuation" looked like it meant -- took the fast lane's translation
     // from **1.48 Chinese characters per English word to 1.08** on
@@ -228,7 +228,7 @@ mod tests {
     use super::*;
 
     /// Every test below this line was written about text a recogniser heard,
-    /// which is what all of them were before task 1.25. Shadowing `split` here
+    /// which is what all of them were before punctuation restoration. Shadowing `split` here
     /// keeps them saying that, and keeps the diff that introduced [`Marks`]
     /// from silently changing what any of them assert.
     fn split(text: &str, max_words: usize, run_words: usize) -> Vec<&str> {
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn restored_marks_are_cut_at_and_then_cut_by_width() {
-        // The 1.25 measurement in one assertion. This is the fast lane's own
+        // The measurement in one assertion. This is the fast lane's own
         // text with the punctuation model's marks on it: 21 words, one full
         // stop. Trusting the mark alone hands NLLB a 12-word piece and a
         // 9-word one, and gets back the first clause of each.
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn a_long_sentence_is_cut_at_its_clauses() {
-        // The 1.5 transcript line that measured worst: NLLB translated
+        // The transcript line that measured worst: NLLB translated
         // "and the days that followed..." and dropped the rest.
         let line = "Her meeting with Letty was indescribably tender, and the days that \
                     followed were pretty equally divided between her and her brother, in \

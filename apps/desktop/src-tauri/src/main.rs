@@ -1,10 +1,10 @@
-//! The floating subtitle bar (PLAN §13.1, tasks 1.9 and 1.10).
+//! The floating subtitle bar.
 //!
 //! A frameless, transparent, always-on-top window holding two lines: the
 //! source, and its translation. `li-core` does the work; this window shows it
 //! and gets out of the way.
 //!
-//! Task 1.10 adds the three things that make it usable without a terminal: a
+//! On top of that come the three things that make it usable without a terminal: a
 //! settings window that writes `config.toml`, a bar that stays where it was
 //! dragged, and global hotkeys -- see [`Action`] for why they have to be
 //! global.
@@ -14,18 +14,19 @@
 //! `LI_PROBE=1` opens the bar with sample text, a checklist, and no engine.
 //! Four of the window's properties are things a Wayland compositor is free to
 //! refuse -- always-on-top especially, because Wayland has no protocol for a
-//! client to ask -- and PLAN §19.7 has had them down as unverified since the
+//! client to ask -- and they had been listed as unverified since the
 //! plan was written. Half a minute of looking answers it, and nothing above
 //! this line is worth building until it is answered. (Answered on 2026-09-03:
-//! `docs/phase1/TASK_1_9_WAYLAND.md`.)
+//! native Wayland refuses always-on-top, and under
+//! XWayland all four hold on KDE Plasma -- which is why the bar forces X11.)
 //!
 //! `LI_PROBE=replay` opens the real bar and feeds it a scripted minute of
-//! subtitle, for the question §19.3 leaves open -- whether the in-place
+//! subtitle, for the open question -- whether the in-place
 //! overwrite disturbs reading. See [`probe`].
 //!
 //! ## Why plain HTML and no bundler
 //!
-//! PLAN §13.1 said Svelte + Vite. The bar is two `<div>`s and a `listen()`
+//! The first plan said Svelte + Vite. The bar is two `<div>`s and a `listen()`
 //! call, and the settings window is a form; neither needs a component
 //! framework, and skipping it keeps node out of the build entirely -- one
 //! fewer toolchain to have installed on Windows and in CI. If the UI ever
@@ -107,7 +108,7 @@ fn shell(app: &AppHandle) -> tauri::State<'_, Shared> {
 
 // --- commands ---------------------------------------------------------------
 
-/// The bar's own settings (PLAN §14 `[ui]`).
+/// The bar's own settings.
 ///
 /// Read by the front end at load: font size and opacity are CSS, and the row
 /// budgets decide where a long line is clipped. The window geometry they also
@@ -161,13 +162,13 @@ fn preview_ui(app: AppHandle, ui: UiCfg) -> Result<(), String> {
     apply_ui(&app, ui).map_err(|e| e.to_string())
 }
 
-/// Write `config.toml` (PLAN §17 task 1.10).
+/// Write `config.toml`.
 ///
 /// `[ui]` is applied as it is edited, the hotkeys are re-registered here, and
 /// the audio source reopens the capture device (see [`reopen_capture`]). The
 /// rest -- the lanes, the transcript -- is still read only when the engine
 /// starts, and this program has no way to swap a model out from under a
-/// running pipeline (PLAN §10.3's `update_config` is not built). Saying so in
+/// running pipeline (there is no live `update_config`). Saying so in
 /// the window beats a setting that looks applied and is not.
 #[tauri::command]
 fn save_config(app: AppHandle, cfg: EngineConfig) -> Result<Saved, String> {
@@ -209,7 +210,7 @@ fn save_config(app: AppHandle, cfg: EngineConfig) -> Result<Saved, String> {
 /// Point the running engine at the audio source that was just saved.
 ///
 /// The capture device is opened once, by `Engine::start`, and there is no way
-/// to aim a running pipeline at a different one -- so until task 1.23 changing
+/// to aim a running pipeline at a different one -- so until the engine learned to restart, changing
 /// the source in the settings window changed the file and nothing else, and
 /// the bar went on transcribing whatever it had opened when it started. That
 /// is what was reported: switching to the microphone kept the speakers. The
@@ -308,7 +309,7 @@ fn fit_settings(window: Window, width: f64, height: f64, dpr: f64) -> Result<(),
     window.center().map_err(|e| e.to_string())
 }
 
-/// Let clicks reach whatever is behind the bar (PLAN §13.1).
+/// Let clicks reach whatever is behind the bar.
 #[tauri::command]
 fn set_click_through(app: AppHandle, on: bool) -> Result<(), String> {
     click_through(&app, on).map_err(|e| e.to_string())
@@ -360,7 +361,7 @@ async fn pause(state: tauri::State<'_, State>, on: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Where this session's transcript is being written (PLAN §13.1).
+/// Where this session's transcript is being written.
 #[tauri::command]
 async fn transcripts(state: tauri::State<'_, State>) -> Result<Vec<String>, String> {
     Ok(state
@@ -376,7 +377,7 @@ async fn transcripts(state: tauri::State<'_, State>) -> Result<Vec<String>, Stri
 /// End the program.
 ///
 /// There has to be a button for this. The bar draws no decorations and is kept
-/// off the taskbar, so until 1.14 put a package on a real machine nobody had
+/// off the taskbar, so until a package was installed on a real machine nobody had
 /// noticed that the only way to stop it was `pkill` from a terminal.
 ///
 /// `Engine::stop().await` and not a bare `app.exit`: stopping drops the capture
@@ -513,7 +514,7 @@ fn estimate_height(ui: &UiCfg) -> f64 {
 /// It has to be remembered, and not just left alone, because the window is
 /// re-placed every time the translation wraps to another row -- without this
 /// the bar would jump back to the middle of the screen several times a minute,
-/// which is exactly the "跳行" task 1.9 was about, one level up.
+/// which is exactly the line-jumping the bar exists to avoid, one level up.
 ///
 /// The drag is recorded as an offset from where the settings would have put
 /// the bar, so it survives a resolution change and a different monitor.
@@ -580,11 +581,11 @@ fn settle(app: &AppHandle, to: PhysicalPosition<i32>) -> Result<()> {
 
 // --- hotkeys ----------------------------------------------------------------
 
-/// What a global hotkey does (PLAN §17 task 1.10).
+/// What a global hotkey does.
 ///
 /// Global, and not a button on the bar, because two of the three are otherwise
 /// unreachable. A bar with click-through on receives no clicks, so nothing
-/// drawn on it can turn click-through off again -- PLAN §13.1's "switch it off
+/// drawn on it can turn click-through off again -- the design's "switch it off
 /// while the pointer is over the bar" cannot be done at all, since a window
 /// that ignores the cursor stops being told the cursor arrived. And pausing is
 /// wanted at the moment something private is about to be said, which is not a
@@ -694,7 +695,7 @@ async fn fetch_models(app: AppHandle, state: tauri::State<'_, State>) -> Result<
     // each one a JS evaluation in the webview for a bar that repaints at most
     // sixty times a second.
     //
-    // This is NOT what fixed the bar that never moved (PLAN 1.13), though it
+    // This is NOT what fixed the bar that never moved, though it
     // was the first diagnosis and it was tested as one: sampled down to 227
     // events, the bar still did not move. The cause was that the download
     // window was missing from capabilities/default.json, so its `listen` was
@@ -892,9 +893,9 @@ fn prefer_x11() {
 enum Mode {
     /// The bar, driven by the engine.
     Engine,
-    /// The bar with the Wayland checklist over it, and no engine (§19.7).
+    /// The bar with the Wayland checklist over it, and no engine.
     Checklist,
-    /// The bar, driven by a script instead of by audio (§19.3).
+    /// The bar, driven by a script instead of by audio.
     Replay,
 }
 
@@ -1035,7 +1036,7 @@ fn main() {
 
             // A front end that dies before its first measurement leaves a bar
             // at the estimated height, which looks close enough to right to go
-            // unnoticed. Task 1.9's first probe reported three Wayland failures
+            // unnoticed. The first probe reported three Wayland failures
             // that were really a front end that never ran; this says so.
             let waiting = window.clone();
             tauri::async_runtime::spawn(async move {
@@ -1100,8 +1101,8 @@ fn main() {
             });
 
             // A first run has no models, and `start` would fail on the first
-            // one it could not resolve -- which used to be the whole story
-            // (task 1.13). Ask before starting, and if anything is missing open
+            // one it could not resolve -- which used to be the whole story.
+            // Ask before starting, and if anything is missing open
             // the download window instead; `fetch_models` starts the engine
             // when it is done.
             let cfg_for_plan = shell(&handle).lock().unwrap().cfg.clone();
@@ -1197,7 +1198,7 @@ mod tests {
         assert_eq!((at.x, size.width), (2624, 2880));
     }
 
-    /// Task 1.10: a dragged bar keeps the place it was dragged to when the
+    /// A dragged bar keeps the place it was dragged to when the
     /// translation wraps and the window is re-placed -- and still grows away
     /// from the edge, so the two rules do not fight.
     #[test]
@@ -1237,8 +1238,8 @@ mod tests {
     /// A window left out of `capabilities/default.json` gets no `core:`
     /// permission, and nothing says so at build time: the page loads, its
     /// first `listen` is refused by the ACL, and whatever came after that line
-    /// silently never runs. It happened to the settings window (1.14) and then
-    /// to the download window (1.13, found on the Flatpak's first run), whose
+    /// silently never runs. It happened to the settings window and then
+    /// to the download window (found on the Flatpak's first run), whose
     /// progress bar never moved. A new window's label goes in this list.
     #[test]
     fn every_window_is_granted_the_core_permissions() {

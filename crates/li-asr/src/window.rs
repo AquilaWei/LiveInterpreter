@@ -1,6 +1,6 @@
 //! The rolling audio history the accurate lane is fed out of.
 //!
-//! The fast lane decides where an utterance starts and ends (PLAN §12.2), and
+//! The fast lane decides where an utterance starts and ends, and
 //! the accurate lane is then handed exactly that stretch of the *raw* audio --
 //! not the audio the fast lane consumed, which has already gone. So something
 //! has to keep the recent past, and something has to cut a span out of it by

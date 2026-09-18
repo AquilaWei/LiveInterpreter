@@ -1,8 +1,8 @@
 //! `cargo xtask punct` — does the punctuation model find the sentence
 //! boundaries the accurate lane finds, and what does asking cost?
 //!
-//! This is the decision gate for task 1.25 and it deliberately changes no
-//! pipeline code. Task 1.24 closed the two acoustic routes to mid-utterance
+//! This is the decision gate for punctuation restoration and it deliberately changes no
+//! pipeline code. Earlier measurements closed the two acoustic routes to mid-utterance
 //! segmentation; what is left is the semantic one, and before any of it is
 //! built the hypothesis has to survive a number.
 //!
@@ -141,7 +141,7 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
 
 /// The shared model cache, by the one rule that decides it.
 ///
-/// Spelled out by hand here until task 1.14b: three copies of
+/// Spelled out by hand here until the Flatpak work: three copies of
 /// `$HOME/.cache/liveinterpreter/models`, which is the exact duplication
 /// `li_types::paths` was written to remove (see its module docs). They went
 /// wrong together when the flatpak work taught that rule about

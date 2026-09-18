@@ -1,4 +1,4 @@
-// The settings window (PLAN §14, §17 task 1.10).
+// The settings window.
 //
 // It edits the same `config.toml` a person edits by hand, so it writes through
 // `li_core::config`, which merges into the existing document rather than
@@ -10,10 +10,10 @@
 // `[ui]` is applied to the running bar as the slider moves: the only place the
 // question "is this readable at this size, from where I sit" can be answered
 // is on the real bar over the real screen. The audio source is applied on save
-// too, by restarting the engine (task 1.23) -- a device that was switched and
+// too, by restarting the engine -- a device that was switched and
 // then quietly ignored is the whole reason that is worth the model reload.
 // The transcript is still read only when the engine starts, and there is no
-// way to swap a model out from under a running pipeline (PLAN §10.3's
+// way to swap a model out from under a running pipeline (a live
 // `update_config` is not built). That one says "下次啟動生效" rather than
 // pretending.
 //

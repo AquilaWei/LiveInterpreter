@@ -1,6 +1,6 @@
-//! Accurate lane: whisper.cpp / GGML `small.en` q5_1 (PLAN §8.2, §8.1).
+//! Accurate lane: whisper.cpp / GGML `small.en` q5_1.
 //!
-//! Locked by task 1.0b: offline RTF 0.053 on Vulkan against 0.123 on the CPU,
+//! Measured: offline RTF 0.053 on Vulkan against 0.123 on the CPU,
 //! WER within 1.2 points of `medium` for a third of the compute. `base.en` is
 //! the no-GPU fallback and is a config change, not a code path.
 //!
@@ -9,10 +9,10 @@
 //! Every [`AsrEngine::feed`] transcribes the buffer it is handed and returns
 //! the whole hypothesis, words and all. It is `li-stream` that decides which
 //! audio a pass gets and what happens to the result. That division is the
-//! lesson of task 1.0b -- the Phase 0 collapse was a buffer that grew to ~22 s
-//! and fed back on itself, not an engine that was too slow -- and task 1.5
+//! lesson of the Python prototype -- its collapse was a buffer that grew to ~22 s
+//! and fed back on itself, not an engine that was too slow -- and measurement
 //! sharpened it: one pass over one whole utterance, cut at the fast lane's own
-//! endpoints, beat every re-transcription policy tried (PLAN §12.3).
+//! endpoints, beat every re-transcription policy tried.
 //!
 //! ## Two parameter choices that are latency decisions
 //!
@@ -46,9 +46,9 @@ use crate::{
 /// whisper.cpp reports segment and token times in centiseconds.
 const TIME_UNIT: Duration = Duration::from_millis(10);
 
-/// 1.0b measured beam 5. Lower would be faster and is a knob task 1.15 can turn
+/// Beam 5 is what was measured. Lower would be faster and is a knob to turn
 /// if the soak test needs it; changing it silently would invalidate the WER
-/// numbers §16 signs off on.
+/// numbers the acceptance gates sign off on.
 const BEAM_SIZE: i32 = 5;
 
 /// whisper's encoder context, in units of 20 ms, for a full 30 s window.
@@ -69,7 +69,7 @@ const TEMPERATURE_INC: f32 = 0.2;
 /// **whisper always encodes a 30-second window.** It pads whatever it is given
 /// up to 30 s and runs the encoder over all of it, so a 4-second buffer costs
 /// exactly as much as a 30-second one. That is why the offline RTF from task
-/// 1.0b — measured over whole files, where the padding is amortised — does not
+/// The first benchmark — measured over whole files, where the padding is amortised — does not
 /// predict the streaming cost: at a 0.8 s tick, a 12 s rolling buffer means
 /// ~1.2 encodes of a 30 s window *per second of audio*, and the lane cannot
 /// keep up on any hardware.
@@ -87,7 +87,7 @@ const TEMPERATURE_INC: f32 = 0.2;
 /// > and then when you go on the menu, you can select the description box,
 /// > and then when you go on the menu, you can select the description…
 ///
-/// Measured on Arc 140V, one run per cell (`docs/phase1/TASK_1_4_FINDINGS.md`):
+/// Measured on Arc 140V, one run per cell:
 ///
 /// | encoder context | ms/pass | content WER `ami_meeting` | `ami_meeting2` |
 /// |---|---|---|---|
@@ -100,7 +100,7 @@ const TEMPERATURE_INC: f32 = 0.2;
 ///
 /// The tempting use was the no-GPU path, where the full window does not fit in
 /// the clock. **The answer there is a smaller model, not a shorter encoder** —
-/// which is what §8 already specified: `base.en` rather than a crippled
+/// which is the fallback the design already chose: `base.en` rather than a crippled
 /// `small.en`. This function stays public because the trap is worth being able
 /// to reproduce, not because anything should call it.
 pub fn audio_ctx_for(buffer: Duration) -> i32 {
@@ -137,7 +137,7 @@ impl WhisperAccurate {
         if !path.is_file() {
             bail!(
                 "accurate-lane model not found: {}\n\
-                 Fetch a GGML .bin (PLAN §15) or point `[asr.accurate] model` at one.",
+                 Fetch a GGML .bin or point `[asr.accurate] model` at one.",
                 path.display()
             );
         }
@@ -240,7 +240,7 @@ impl WhisperAccurate {
     /// not cosmetic: `li-stream` trims the rolling buffer to the commit
     /// frontier, so a word timed in the future moves the buffer origin into the
     /// future, every later word inherits the error, the buffer-length check
-    /// underflows to zero and the cap never fires again. Task 1.5 measured that
+    /// underflows to zero and the cap never fires again. It was measured that
     /// as a lane running 12 s behind with a *negative* reported latency.
     fn collect(&self, t_origin: Duration, limit: Duration) -> Result<Vec<li_types::Word>> {
         let mut pieces: Vec<(String, Duration)> = Vec::new();
@@ -250,7 +250,7 @@ impl WhisperAccurate {
                 // whisper writes non-speech as ordinary text, not as a special
                 // token: "[BLANK_AUDIO]", "(upbeat music)", "[ Silence ]".
                 // Nothing downstream would strip it, so it would reach the
-                // subtitle bar and the transcript file §2.6 requires to be a
+                // subtitle bar and the transcript file that has to be a
                 // record of what was said.
                 continue;
             }

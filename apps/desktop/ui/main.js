@@ -1,7 +1,7 @@
-// The bar's front end (PLAN §13.1, §12.2).
+// The bar's front end.
 //
 // A file rather than an inline <script>: the CSP is `default-src 'self'`, so
-// an inline module is blocked outright. Task 1.9's first probe had it inline
+// an inline module is blocked outright. The first probe had it inline
 // and reported three Wayland failures that were really this.
 //
 // ## The one rule
@@ -11,23 +11,23 @@
 // speaker is usually a sentence further on -- so a settled line often arrives
 // after the row has moved on. It is dropped from the screen when that happens.
 // It is not lost: `li-transcript` already has it, and the transcript file is
-// where the accurate text is meant to end up (PLAN §2.6).
+// where the accurate text is meant to end up.
 //
-// The alternative is what the CLI of task 1.8 does -- follow whichever line the
+// The alternative is what the CLI does -- follow whichever line the
 // last event named -- and it makes the row jump back to the previous sentence
-// and then forward again, several times a minute. That is the "跳行" PLAN §17
-// task 1.9 asks not to have.
+// and then forward again, several times a minute. That is the line-jumping
+// this bar exists to avoid.
 //
 // ## Two clocks, two rows
 //
 // The consequence is that the two rows are not always the same sentence. They
-// used to be a whole sentence apart; since task 1.20 the draft translation is
+// used to be a whole sentence apart; since the draft translation started early it is
 // worked out during the silence that ends the line, so both land at about
 // 0.68 s and usually together. The settled pair still arrives later and still
 // separately -- 1.14 s for the source, 1.38 s for its translation -- and a
 // settled line whose row has moved on is dropped. Holding the source row back
-// to match would throw away the fast lane's whole reason for existing (PLAN
-// §16 G1).
+// to match would throw away the fast lane's whole reason for existing: text on screen
+// within about a second.
 //
 // Both rows dim to say the same thing: what you are reading is the fast lane's
 // answer and may be replaced. On the source row that is a hypothesis still
@@ -264,7 +264,7 @@ document.addEventListener("contextmenu", (e) => {
   invoke("open_settings").catch((err) => console.error("open_settings", err));
 });
 
-// --- LI_PROBE=1: the Wayland checklist (PLAN §19.7) ------------------------
+// --- LI_PROBE=1: the Wayland checklist ------------------------
 
 const params = new URLSearchParams(location.search);
 if (params.get("probe") === "1") {

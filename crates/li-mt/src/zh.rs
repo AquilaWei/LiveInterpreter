@@ -1,10 +1,10 @@
 //! Turning NLLB's output into something a Taiwanese reader would accept.
 //!
-//! Two steps, both required, both measured in task 1.6:
+//! Two steps, both required, both measured:
 //!
 //! * **OpenCC `s2twp`.** NLLB's `zho_Hant` is Traditional *characters* carrying
 //!   Mainland *words*: it writes 項目經理 where Taiwan writes 專案經理, 軟件 for
-//!   軟體, 信息 for 訊息, 鼠標 for 滑鼠. PLAN §2.4 calls Traditional Chinese a
+//!   軟體, 信息 for 訊息, 鼠標 for 滑鼠. The product calls Traditional Chinese a
 //!   hard requirement, and the character set alone does not satisfy it.
 //! * **Full-width punctuation.** NLLB emits ASCII `,` `.` `:` with a space
 //!   after, so a subtitle line reads "我是薩拉, 專案經理." rather than
@@ -13,7 +13,7 @@
 //!
 //! The converter is not `opencc-rust`: see the workspace `Cargo.toml`. Whether
 //! the substitution is faithful is not taken on trust -- `tests/reference.rs`
-//! replays OpenCC 1.1.9's own output for every case in the Phase 0 fixture.
+//! replays OpenCC 1.1.9's own output for every case in the prototype's fixture.
 
 use anyhow::{Context, Result};
 use ferrous_opencc::{OpenCC, config::BuiltinConfig};

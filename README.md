@@ -22,15 +22,33 @@
 跑過一段時間了。
 
 **Flatpak 是建議的安裝方式**，而且理由不只是方便：`.rpm` / `.deb` 裡的執行檔要求
-glibc ≥ 2.43，所以那兩個包實際上只裝得起來在 Fedora 43。Flatpak 自帶 runtime，沒有
-這個限制。
+glibc ≥ 2.43，實際上只裝得起來在 Fedora 44 以後。Flatpak 自帶 runtime，沒有這個限制。
 
-⚠️ **但它到目前為止只在一台機器上裝過**（開發機，Fedora 43 + Intel Arc 140V）。
-它會不會在你的機器上跑起來，還沒有人知道 —— 這正是需要有人試的地方。
+Flatpak 在開發機（Fedora 44 + Intel Arc 140V）上完整跑過，也在一個乾淨的 Debian 13
+容器裡從零安裝成功（沒有 flatpak remote、沒有 runtime、沒有中文字型）。**還沒有人在
+另一台真的電腦上看過畫面、聽過聲音、用過 GPU** —— 如果你試了，不管成不成功都歡迎開
+issue。
 
 Windows 與 Android 的程式碼寫了一部分，但**都暫緩**，現在不要期待它們能用。
 
 英文 → 繁體中文，單一方向。
+
+---
+
+## 技術棧
+
+| 部分 | 用的是 |
+|---|---|
+| 語言 | Rust（workspace，8 個 crate + CLI + 桌面版） |
+| 快線辨識 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) streaming Zipformer，CPU；另一個小模型補標點與大小寫 |
+| 精準線辨識 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `small.en` q5_1，Vulkan GPU（沒有 GPU 時退到 CPU 的 `base.en`） |
+| 語音偵測 | Silero VAD，跑在 ONNX Runtime 上 |
+| 翻譯 | NLLB-200-distilled-600M int8，跑在 [CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN，CPU |
+| 簡轉繁 | OpenCC `s2twp`（台灣用詞），字典編進執行檔 |
+| 擷取音訊 | PulseAudio（Linux）／cpal |
+| 介面 | [Tauri 2](https://tauri.app/)，前端是純 HTML + JS，沒有 bundler |
+| 打包 | Flatpak（主要）、rpm、deb |
+| CI | GitHub Actions：`cargo fmt`、`clippy -D warnings`、全部測試 |
 
 ---
 
@@ -47,13 +65,13 @@ flatpak install --user ./LiveInterpreter.flatpak    # 建議
 還是提供 `.rpm` / `.deb`，但**它們需要 glibc ≥ 2.43**：
 
 ```bash
-sudo dnf install ./LiveInterpreter-*.x86_64.rpm     # Fedora 43 起
+sudo dnf install ./LiveInterpreter-*.x86_64.rpm     # Fedora 44 起
 sudo apt install ./LiveInterpreter_*_amd64.deb      # Debian/Ubuntu（未實測）
 ```
 
 ### 2. 下載模型
 
-安裝包裡**不含模型**（包 71 MB，模型 1 GB）。第一次打開桌面版它會自己問要不要下載；
+安裝包裡**不含模型**（Flatpak 約 44 MB，模型 1 GB）。第一次打開桌面版它會自己問要不要下載；
 要用命令列：
 
 ```bash
@@ -124,10 +142,9 @@ SPIRV-Headers，而 Fedora 沒有打包它，要自己裝一份——`scripts/bu
 
 | | |
 |---|---|
-| [`docs/PLAN.md`](docs/PLAN.md) | 完整規劃、技術選型的理由、每個任務的實測數字 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 每一版改了什麼 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 每一版改了什麼、為什麼 |
 | [`BUILDING.md`](BUILDING.md) | 建置的細節與各平台的坑 |
-| `docs/phase1/` | 每個任務量到什麼、哪些路走不通 |
-| `poc/` | Python 拋棄式原型，保留作為各 crate 的行為對照 |
+| [`testdata/README.md`](testdata/README.md) | 評估用的音檔從哪來、各自量什麼 |
 
-這個專案的規矩是**先量再做**：延遲、WER、每一條走不通的路，數字都在 `docs/` 裡。
+這個專案的規矩是**先量再做**：每個預設值背後都有一次量測，理由寫在設定它的程式碼
+註解裡。`cargo xtask eval` 可以在測試音檔上自己重跑延遲與 WER。

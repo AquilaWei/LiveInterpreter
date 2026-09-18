@@ -97,7 +97,7 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
 
 /// The shared model cache, by the one rule that decides it.
 ///
-/// Spelled out by hand here until task 1.14b: three copies of
+/// Spelled out by hand here until the Flatpak work: three copies of
 /// `$HOME/.cache/liveinterpreter/models`, which is the exact duplication
 /// `li_types::paths` was written to remove (see its module docs). They went
 /// wrong together when the flatpak work taught that rule about

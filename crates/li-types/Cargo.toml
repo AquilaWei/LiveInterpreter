@@ -1,6 +1,6 @@
 [package]
 name = "li-types"
-description = "Shared data types for the LiveInterpreter pipeline (PLAN §10.1)"
+description = "Shared data types for the LiveInterpreter pipeline"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

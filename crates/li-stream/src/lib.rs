@@ -1,4 +1,4 @@
-//! Commit policy and dual-lane merge (PLAN §12).
+//! Commit policy and dual-lane merge.
 //!
 //! [`stream`] is the state machine: the fast lane opens and closes subtitle
 //! lines, the accurate lane later replaces their text under the same id, and
@@ -8,8 +8,8 @@
 //! Nothing here starts a thread, owns a model, or reads a clock. `li-core`
 //! drives it.
 //!
-//! **The accurate lane does not re-transcribe.** PLAN §12.3 specified
-//! LocalAgreement-2 over a rolling buffer; task 1.5 measured it against
+//! **The accurate lane does not re-transcribe.** The first design specified
+//! LocalAgreement-2 over a rolling buffer; it was measured against
 //! transcribing one whole utterance at a time and it lost on every count --
 //! accuracy, completeness and cost. See [`agree`] for the numbers.
 
@@ -18,18 +18,18 @@ use li_types::{FastReason, Lane};
 pub mod agree;
 pub mod load;
 pub mod merge;
-/// Where a restored full stop is worth ending a line (task 1.25 stage 2).
+/// Where a restored full stop is worth ending a line.
 pub mod punct;
 pub mod stream;
 /// Word-level text helpers. Public because `li-core` needs the same idea of
 /// what a filler is when it decides whether a line is worth translating -- a
 /// line of nothing but "Okay." is 20.5% of them, and NLLB turns every one into
-/// a hallucination (PLAN §19-20).
+/// a hallucination.
 pub mod text;
 
 pub use stream::{LaneMode, Stream};
 
-/// Tuning that Phase 0 and the task 1.0 spikes settled on.
+/// Tuning that the prototype and the first benchmarks settled on.
 #[derive(Debug, Clone, Copy)]
 pub struct StreamConfig {
     /// Trailing silence that ends a sentence, and the fast lane's line boundary.
@@ -62,7 +62,7 @@ pub struct StreamConfig {
     /// Without it, a three-word line where one filler differs trips the guard.
     pub min_drop_words: usize,
     /// The mirror image: reject accurate-lane text longer than this multiple of
-    /// the fast lane's content word count *and* repeating itself (task 1.4).
+    /// the fast lane's content word count *and* repeating itself.
     /// Legitimately longer output is common -- whisper spells numbers out and
     /// hears words the fast lane misses -- so this sits well above 1.0 and is
     /// still only half the test.

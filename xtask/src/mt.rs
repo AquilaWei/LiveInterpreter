@@ -37,7 +37,7 @@ pub struct Args {
     /// Score the model's own output, before OpenCC and punctuation.
     pub raw: bool,
     /// Whether a recogniser heard this file's punctuation or a model restored
-    /// it. Defaults to heard, which is what every file scored before task 1.25
+    /// it. Defaults to heard, which is what every file scored before punctuation restoration
     /// was -- an accurate-lane transcript or a reference.
     pub marks: Marks,
     pub out: Option<PathBuf>,

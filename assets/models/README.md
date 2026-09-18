@@ -2,7 +2,7 @@
 
 Only the VAD lives here. Every other model is downloaded on first use into
 `~/.cache/liveinterpreter/models/` and verified against `assets/models.toml`
-(PLAN §15) — the recognisers and the translator are hundreds of megabytes and
+ — the recognisers and the translator are hundreds of megabytes and
 have no business in a git repository or an installer.
 
 | file | model | licence | sha256 |

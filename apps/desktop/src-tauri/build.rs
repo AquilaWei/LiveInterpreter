@@ -10,7 +10,7 @@
 //! error while loading shared libraries: libsherpa-onnx-c-api.so
 //! ```
 //!
-//! PLAN §17 predicted this would block the 1.8 alpha rather than wait for the
+//! This was expected to block the first runnable build rather than wait for the
 //! packaging task, and it did, on the first run of the assembled engine. One
 //! rpath entry fixes it for the built binary and for anything installed
 //! alongside its libraries.
@@ -29,8 +29,8 @@ fn main() {
             // The build tree: the .so files sit beside the executable.
             println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
             // The installed tree: the executable is /usr/bin/<name> and the
-            // packages put the libraries in a private directory of their own
-            // (1.14; PLAN §19-33). Both spellings, because Fedora and Debian
+            // packages put the libraries in a private directory of their own.
+            // Both spellings, because Fedora and Debian
             // disagree about which of lib/ and lib64/ is the real one.
             println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/LiveInterpreter");
             println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib64/LiveInterpreter");

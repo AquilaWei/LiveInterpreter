@@ -135,7 +135,7 @@ async fn sentence_spans_are_real_and_ordered() {
 
     let mut last_end = Duration::ZERO;
     for (text, start, end) in &lines {
-        // The Phase 0 bug: t_start == t_end, and every SRT block was zero-length.
+        // The prototype's bug: t_start == t_end, and every SRT block was zero-length.
         assert!(end > start, "zero-length span for {text:?}");
         assert!(*start >= last_end, "sentences out of order at {text:?}");
         assert!(
@@ -220,7 +220,7 @@ async fn the_accurate_lane_punctuates() {
     };
     assert!(text.contains("fellow Americans"), "{text}");
     // LocalAgreement-2 compares words, so a hypothesis without them is useless
-    // to `li-stream` (task 1.5) no matter how good the string is.
+    // to `li-stream` no matter how good the string is.
     assert!(!words.is_empty());
     assert!(words.windows(2).all(|w| w[1].start >= w[0].start));
 

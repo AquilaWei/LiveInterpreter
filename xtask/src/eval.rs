@@ -1,4 +1,4 @@
-//! `cargo xtask eval` -- the acceptance harness of PLAN §16.
+//! `cargo xtask eval` -- the acceptance harness: gates G1-G4.
 //!
 //! Runs the whole recognition pipeline over a golden clip at playback speed and
 //! reports the gate numbers. The clip is never slowed down for a slow consumer,
@@ -6,11 +6,10 @@
 //! lane that falls behind loses audio exactly as it would in a meeting.
 //!
 //! This is the first measurement that includes `li-stream`, and therefore the
-//! first that can speak to G2a/G2b at all: task 1.4's bench finalised on every
+//! first that can speak to G2a/G2b at all: the earlier bench finalised on every
 //! VAD pause, which is not the commit policy the product ships.
 //!
-//! Task 1.15 extends this to the translation gates; the ASR half is here
-//! because task 1.5 claims G2b and a claimed gate has to be measured.
+//! The ASR half is here because a claimed gate has to be measured.
 
 use std::{
     path::{Path, PathBuf},
@@ -40,7 +39,7 @@ pub struct Args {
     device: DeviceRequest,
     out: Option<PathBuf>,
     transcript: Option<PathBuf>,
-    /// Overrides for the two segmentation knobs task 1.24 sweeps.
+    /// Overrides for the two segmentation knobs, for sweeping.
     endpoint_silence: Option<f32>,
     max_utterance: Option<f32>,
     /// Restore punctuation and casing on the fast lane, as `li_core::Engine`
@@ -48,7 +47,7 @@ pub struct Args {
     /// harness that has to be able to show the two runs are the same.
     punct: bool,
     /// End a line where the restored punctuation says a sentence ended, as
-    /// `[asr.fast] semantic_cut` does (task 1.25 stage 2). Implies `--punct`:
+    /// `[asr.fast] semantic_cut` does. Implies `--punct`:
     /// with no marks there is nothing to cut on.
     cut: bool,
 }
@@ -112,7 +111,7 @@ pub fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
 
 /// The shared model cache, by the one rule that decides it.
 ///
-/// Spelled out by hand here until task 1.14b: three copies of
+/// Spelled out by hand here until the Flatpak work: three copies of
 /// `$HOME/.cache/liveinterpreter/models`, which is the exact duplication
 /// `li_types::paths` was written to remove (see its module docs). They went
 /// wrong together when the flatpak work taught that rule about
@@ -310,7 +309,7 @@ async fn go(args: Args) -> Result<()> {
     let mut speech_start: Option<Duration> = None;
 
     // `--transcript` runs the real `li-transcript` writer over a real clip.
-    // Until task 1.8 assembles the engine this is the only place the two meet,
+    // Before the engine was assembled this was the only place the two meet,
     // and a golden clip is a better test of the subtitle timings than anything
     // hand-written: the spans come from the fast lane's own word times.
     let mut sink = args
@@ -437,7 +436,7 @@ async fn go(args: Args) -> Result<()> {
                         // utterance. Its boundaries come from the fast lane's
                         // own endpoint detector, so the window is a whole
                         // clause -- which is the condition whisper is good at
-                        // and the condition task 1.5 measured a re-transcribing
+                        // and the condition measured for a re-transcribing
                         // buffer failing to provide.
                         if let Some(acc) = accurate.as_mut() {
                             let prompt = stream.prompt_tail();

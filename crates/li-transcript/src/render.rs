@@ -10,8 +10,8 @@ use li_types::TranscriptLine;
 /// Shortest subtitle cue that gets written.
 ///
 /// A cue whose start equals its end is invisible in every player, and the
-/// Phase 0 PoC wrote nothing else: it filled `t_start` and `t_end` with the
-/// same value, so every SRT block came out zero-length (PLAN §12.4). The span
+/// Python prototype wrote nothing else: it filled `t_start` and `t_end` with the
+/// same value, so every SRT block came out zero-length. The span
 /// is real now -- the fast lane fixes it when it hands out the `line_id` -- but
 /// a one-word promoted line can still be a couple of hundred milliseconds, so
 /// the floor stays.
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn a_zero_length_span_is_widened_to_a_visible_cue() {
-        // The Phase 0 bug: both ends were `last_committed_time`, and every
+        // The prototype's bug: both ends were `last_committed_time`, and every
         // player showed nothing at all.
         let (a, b) = cue_span(&line(12.0, 12.0, "hi"));
         assert_eq!((a, b), (12.0, 12.5));

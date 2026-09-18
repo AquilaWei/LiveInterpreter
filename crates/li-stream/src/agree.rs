@@ -2,10 +2,10 @@
 //!
 //! ## What used to be here, and why it is not
 //!
-//! PLAN §12.3 specified **LocalAgreement-2**: re-transcribe a rolling buffer
+//! The first design specified **LocalAgreement-2**: re-transcribe a rolling buffer
 //! every tick and commit a word once two consecutive hypotheses agree on it
-//! (ufal/whisper_streaming; ported in `poc/liveinterpreter_poc/stream.py`).
-//! Task 1.5 implemented it, measured it, and removed it.
+//! (ufal/whisper_streaming).
+//! It was implemented, measured, and removed.
 //!
 //! The measurement, all on `ami_meeting2`, `small.en` q5_1 on Vulkan, against a
 //! 15.2% content WER for the same model transcribing the same audio offline:
@@ -67,7 +67,7 @@ impl Committed {
 
     /// The tail of the committed text, for whisper's `initial_prompt`.
     ///
-    /// Phase 0 measured that carrying it improves recognition at the start of a
+    /// The prototype measured that carrying it improves recognition at the start of a
     /// buffer, which is every pass for a lane that transcribes one utterance at
     /// a time.
     pub fn prompt_tail(&self, max_chars: usize) -> String {

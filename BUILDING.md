@@ -23,7 +23,7 @@ sudo dnf install cmake gcc-c++ ninja-build \
 ```
 
 **SPIRV-Headers is not packaged by Fedora** and whisper.cpp's Vulkan backend
-needs it (task 1.0b). Put it somewhere of its own:
+needs it. Put it somewhere of its own:
 
 ```bash
 git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Headers /tmp/spirv-headers
@@ -34,7 +34,7 @@ cmake --install /tmp/spirv-headers/build
 
 `scripts/build.sh` picks that prefix up. Override it with `LI_PREFIX`.
 
-For the desktop app (task 1.9) also:
+For the desktop app also:
 
 ```bash
 sudo dnf install webkit2gtk4.1-devel javascriptcoregtk4.1-devel libsoup3-devel \
@@ -43,9 +43,8 @@ sudo dnf install webkit2gtk4.1-devel javascriptcoregtk4.1-devel libsoup3-devel \
 
 ### Windows
 
-Untested: task 1.11 wrote the WASAPI path on a Linux machine and verified it by
-cross-compiling, not by running it (`docs/phase1/TASK_1_11_WINDOWS.md` says
-exactly what that does and does not prove). Expect to find things.
+Untested, and on hold: the WASAPI path was written on a Linux machine and
+verified by cross-compiling, not by running it. Expect to find things.
 
 ```powershell
 winget install Kitware.CMake Ninja-build.Ninja
@@ -60,7 +59,7 @@ For `gpu-vulkan`, install the **LunarG Vulkan SDK** and let it set `VULKAN_SDK`:
 the Fedora wart above does not apply here. At run time only the vendor driver's
 ICD is needed.
 
-Start with the audio, which is the part 1.11 changed:
+Start with the audio, which is the Windows-specific part:
 
 ```powershell
 cargo run -p li-audio --example probe
@@ -77,7 +76,7 @@ cargo build --release -p li-cli --no-default-features
 ```
 
 The accurate lane then runs `base.en` on the CPU, which keeps up but is 4-5 WER
-points worse (tasks 1.0b, 1.4). Set `[asr.accurate] model = "base.en-q5_1"` and
+points worse. Set `[asr.accurate] model = "base.en-q5_1"` and
 `device = "cpu"`.
 
 ## Models
@@ -93,7 +92,7 @@ About 1.0 GB, from Hugging Face and one GitHub release. Each file is checked
 against the sha256 in `assets/models.toml` before it is put in place, and an
 interrupted transfer resumes from where it stopped. The hashes in that manifest
 were computed from the copies this project measured its WER on, so a successful
-fetch is also a claim that you have the models the numbers in `docs/` describe.
+fetch is also a claim that you have the models the published numbers describe.
 
 Everything lands in `$XDG_CACHE_HOME/liveinterpreter/models/`, which is
 `~/.cache/liveinterpreter/models/` unless something set that variable — the
@@ -125,7 +124,7 @@ away, not fine to sell. See `NOTICE`.
 hard-codes `-L $OUT_DIR/lib` while oneDNN installs to `$OUT_DIR/lib64`, so the
 build stops with `could not find native static library dnnl`. `scripts/build.sh`
 creates the symlink and retries; that is all the fix there is until upstream
-takes one (PLAN §19-24). oneDNN is worth 2.7x on translation, so it is on by
+takes one. oneDNN is worth 2.7x on translation, so it is on by
 default — `--no-default-features` drops it along with the GPU.
 
 **The first build takes a while.** whisper.cpp, CTranslate2 and oneDNN are all
@@ -173,7 +172,7 @@ been resolved against a real apt. The Fedora names have.
 
 **These two packages only install on glibc >= 2.43.** The binaries carry a
 `GLIBC_2.43` requirement (`readelf -V`), which is a property of the machine
-they were built on, not of the packaging. Fedora 43 is 2.43; anything older
+they were built on, not of the packaging. Fedora 44 is 2.43; anything older
 cannot reach `main`. That is what the Flatpak below is for.
 
 ## Packaging (Flatpak)
@@ -227,15 +226,15 @@ Models land in `~/.var/app/io.github.AquilaWei.LiveInterpreter/cache/liveinterpr
 The sandbox's `$HOME` is a tmpfs, so a build that ignored `XDG_CACHE_HOME`
 would throw the gigabyte away on every exit; `li_types::paths` reads it.
 
-There is no auto-update: PLAN §17 1.16 is a version check that only *tells*
-you, because Tauri's in-place updater supports AppImage only and the packages
-here are rpm/deb.
+There is no auto-update: Tauri's in-place updater supports AppImage only, and
+the packages here are Flatpak and rpm/deb.
 
 ## Configuration
 
 `~/.config/liveinterpreter/config.toml` (`%APPDATA%\LiveInterpreter\config.toml`
 on Windows), or `--config FILE`. There need not be one: the defaults are the
-settings tasks 1.4 to 1.7 measured. PLAN §14 is the full schema. The command-line flags override the file for one run and never
+measured settings. `crates/li-core/src/config.rs` is the full schema, with
+every setting documented. The command-line flags override the file for one run and never
 write it back.
 
 ## Running the tests
@@ -256,6 +255,6 @@ LI_MODEL_DIR=~/.var/app/io.github.AquilaWei.LiveInterpreter/cache/liveinterprete
     scripts/build.sh test --workspace
 ```
 
-That is how 1.3.0's 302 were run. `cargo xtask eval
---wav testdata/ami_meeting.wav` runs the acceptance harness of PLAN §16, and
+That is how the full suite is run. `cargo xtask eval
+--wav testdata/ami_meeting.wav` runs the acceptance harness (gates G1-G4), and
 `--transcript DIR` makes it write real transcript files while it does.
