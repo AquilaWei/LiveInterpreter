@@ -1,150 +1,191 @@
 # LiveInterpreter
 
-**把電腦正在播的英文，即時變成螢幕下方的中文字幕。**
+[![ci](https://github.com/AquilaWei/LiveInterpreter/actions/workflows/ci.yml/badge.svg)](https://github.com/AquilaWei/LiveInterpreter/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-開會、看演講、聽 podcast 時，畫面最下面浮一條字幕：一行英文原文、一行繁體中文。
-全部在自己電腦上跑，**不連網、音訊不離開這台機器**。結束後留下一份逐字稿。
+**把電腦正在播的英文，即時變成螢幕下方的繁體中文字幕。**
 
-```
-電腦在播的聲音 ──┬─► 快線 ASR ──► 螢幕字幕（~0.7 秒）
-                 │      （先出，可能有錯）
-                 └─► 精準線 ASR ──► 覆蓋修正 ──► 翻譯 ──► 逐字稿存檔
-```
+開會、看演講、聽 podcast 時，畫面最下面浮著一條字幕：上面是英文原文，下面是中文翻譯。
+語音辨識與翻譯全部在自己的電腦上跑，**音訊不會離開這台機器**。結束後留下一份逐字稿。
 
-兩條辨識線同時跑：快的那條 0.7 秒就把字打上去，慢的那條約 1.2 秒後**原地覆蓋**成
-更準的版本。所以你不必在「快」和「準」之間選。
-
----
-
-## 現在能用到什麼程度
-
-**Linux 桌面，自用穩定。** 懸浮字幕條、設定視窗、逐字稿、安裝包，都在真實音訊上
-跑過一段時間了。
-
-**Flatpak 是建議的安裝方式**，而且理由不只是方便：`.rpm` / `.deb` 裡的執行檔要求
-glibc ≥ 2.43，實際上只裝得起來在 Fedora 44 以後。Flatpak 自帶 runtime，沒有這個限制。
-
-Flatpak 在開發機（Fedora 44 + Intel Arc 140V）上完整跑過，也在一個乾淨的 Debian 13
-容器裡從零安裝成功（沒有 flatpak remote、沒有 runtime、沒有中文字型）。**還沒有人在
-另一台真的電腦上看過畫面、聽過聲音、用過 GPU** —— 如果你試了，不管成不成功都歡迎開
-issue。
-
-Windows 與 Android 的程式碼寫了一部分，但**都暫緩**，現在不要期待它們能用。
-
-英文 → 繁體中文，單一方向。
+> [!NOTE]
+> **這是一個 vibe-coding 專案。** 程式碼、測試與文件幾乎全部由 AI（Anthropic 的
+> Claude，透過 Claude Code）撰寫；維護者負責提出需求、做決定、實際使用與驗收。
+>
+> 這代表：程式碼**沒有經過人逐行審查**。可信度來自量測而不是審閱 —— 300 多個自動化
+> 測試、CI、以及在真實音訊上量出來的延遲與錯誤率。請以這個前提使用，發現問題歡迎開
+> issue。
 
 ---
 
-## 技術棧
+## 特色
 
-| 部分 | 用的是 |
+- **快又準，不必二選一**：快線約 0.7 秒就把英文打上螢幕，精準線隨後原地覆蓋成更準的版本。
+- **完全離線**：辨識與翻譯都在本機；只有第一次下載模型需要網路。
+- **有 GPU 就用 GPU**：精準線走 Vulkan，不綁定顯示卡廠牌（目前只在 Intel Arc 上實測）；
+  沒有 GPU 自動退回 CPU。
+- **不擋路的字幕條**：永遠在最上層、可拖曳、可切換點擊穿透，全域快捷鍵控制。
+- **逐字稿**：txt、srt、vtt、jsonl，每句定稿就寫入，程式當掉也不會丟失已經說過的內容。
+- **台灣用詞**：翻譯後經 OpenCC `s2twp` 轉成台灣慣用的繁體中文。
+
+## 運作方式
+
+```
+電腦在播的聲音 ──┬─► 快線辨識（CPU） ──────────────► 螢幕字幕（約 0.7 秒）
+                 │                                        ▲ 原地覆蓋
+                 └─► 精準線辨識（GPU） ──► 翻譯 ──────────┴─► 逐字稿
+```
+
+兩條辨識線同時跑同一段聲音。快線是串流模型，邊聽邊出字；精準線等一句話說完再整句辨識，
+約一秒後把同一行換成更準的文字，翻譯也跟著更新。
+
+---
+
+## 目前狀態
+
+| 平台 | 狀態 |
 |---|---|
-| 語言 | Rust（workspace，8 個 crate + CLI + 桌面版） |
-| 快線辨識 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) streaming Zipformer，CPU；另一個小模型補標點與大小寫 |
-| 精準線辨識 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `small.en` q5_1，Vulkan GPU（沒有 GPU 時退到 CPU 的 `base.en`） |
-| 語音偵測 | Silero VAD，跑在 ONNX Runtime 上 |
-| 翻譯 | NLLB-200-distilled-600M int8，跑在 [CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN，CPU |
-| 簡轉繁 | OpenCC `s2twp`（台灣用詞），字典編進執行檔 |
-| 擷取音訊 | PulseAudio（Linux）／cpal |
-| 介面 | [Tauri 2](https://tauri.app/)，前端是純 HTML + JS，沒有 bundler |
-| 打包 | Flatpak（主要）、rpm、deb |
-| CI | GitHub Actions：`cargo fmt`、`clippy -D warnings`、全部測試 |
+| **Linux（Flatpak）** | ✅ 建議的安裝方式。開發機上完整驗證；乾淨的 Debian 13 容器中從零安裝成功 |
+| Linux（rpm / deb） | ✅ 可用，但只能裝在 glibc ≥ 2.43 的系統（例如 Fedora 44 以後） |
+| Windows | ⏸ 暫緩。部分程式碼已寫，從未在 Windows 上執行過 |
+| Android | ⏸ 暫緩 |
+
+語言方向目前只有**英文 → 繁體中文**。
+
+還沒有人在「另一台實體電腦」上確認過畫面、聲音與 GPU —— 如果你試了，不論成功與否都歡迎
+開 issue 告訴我們。
 
 ---
 
 ## 安裝
 
-### 1. 裝套件
+### 1. 安裝套件
 
-到 [Releases](https://github.com/AquilaWei/LiveInterpreter/releases) 下載，然後：
+到 [Releases](https://github.com/AquilaWei/LiveInterpreter/releases) 下載 `LiveInterpreter.flatpak`：
 
 ```bash
-flatpak install --user ./LiveInterpreter.flatpak    # 建議
+flatpak install --user ./LiveInterpreter.flatpak
 ```
 
-還是提供 `.rpm` / `.deb`，但**它們需要 glibc ≥ 2.43**：
+需要的 GNOME runtime 會自動從 Flathub 下載，中文字型已內附。
+
+也提供 rpm / deb（需要 glibc ≥ 2.43）：
 
 ```bash
-sudo dnf install ./LiveInterpreter-*.x86_64.rpm     # Fedora 44 起
-sudo apt install ./LiveInterpreter_*_amd64.deb      # Debian/Ubuntu（未實測）
+sudo dnf install ./LiveInterpreter-*.x86_64.rpm
+sudo apt install ./LiveInterpreter_*_amd64.deb      # 未實測
 ```
 
 ### 2. 下載模型
 
-安裝包裡**不含模型**（Flatpak 約 44 MB，模型 1 GB）。第一次打開桌面版它會自己問要不要下載；
-要用命令列：
+安裝包不含模型（約 1 GB）。第一次開啟時會自動詢問並顯示下載進度；也可以用命令列：
 
 ```bash
 flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --fetch-models
 ```
 
-約 1.0 GB，中斷可續傳，每個檔案下載後都會比對 sha256 才就位，不符就刪掉並報錯。
-之後更新程式不會重抓。（用 rpm/deb 裝的話，指令是 `liveinterpreter --fetch-models`。）
-
-### 3. 跑
-
-```bash
-flatpak run io.github.AquilaWei.LiveInterpreter     # 懸浮字幕條（平常用這個）
-```
-
-在應用程式選單裡也找得到它。命令列版與裝置列表：
-
-```bash
-flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter
-flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --list-devices
-```
-
-用 rpm/deb 裝的話就是 `liveinterpreter-desktop`、`liveinterpreter`、
-`liveinterpreter --list-devices`。
-
-預設擷取**電腦正在播的聲音**。要改聽麥克風：`--source mic`，或在設定視窗裡改。
+中斷可以續傳，每個檔案都會比對 sha256，不符就刪掉並報錯。更新程式不需要重新下載。
 
 ---
 
-## 從原始碼建
+## 使用
 
 ```bash
-git clone https://github.com/AquilaWei/LiveInterpreter
-cd LiveInterpreter
-./scripts/build.sh                    # 不要直接用 cargo build，理由見 BUILDING.md
-./scripts/run.sh --list-devices
+flatpak run io.github.AquilaWei.LiveInterpreter
 ```
 
-**一定要看 [`BUILDING.md`](BUILDING.md)**：whisper.cpp 的 Vulkan 後端需要
-SPIRV-Headers，而 Fedora 沒有打包它，要自己裝一份——`scripts/build.sh` 存在的原因
-就是這個。沒有 GPU 也能跑，會自動退到 CPU 的小模型。
+或從應用程式選單開啟。預設擷取**電腦正在播的聲音**；要改聽麥克風，到設定視窗切換。
+
+| 快捷鍵 | 作用 |
+|---|---|
+| `Ctrl+Alt+C` | 切換點擊穿透（滑鼠可以點到字幕條後面的東西） |
+| `Ctrl+Alt+P` | 暫停 / 繼續 |
+| `Ctrl+Alt+S` | 開啟設定視窗 |
+
+快捷鍵可以在設定檔的 `[hotkeys]` 修改。
+
+**命令列版**會把字幕印在終端機上，適合除錯或沒有桌面的環境：
+
+```bash
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter                 # 開始
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --list-devices  # 列出音訊與 GPU
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --help
+```
+
+用 rpm / deb 安裝的話，指令是 `liveinterpreter-desktop` 與 `liveinterpreter`。
 
 ---
 
 ## 設定
 
-字級、透明度、位置在懸浮條的設定視窗裡改，立刻生效。其餘全部在
-`~/.config/liveinterpreter/config.toml`（Flatpak 裝的話是
-`~/.var/app/io.github.AquilaWei.LiveInterpreter/config/liveinterpreter/config.toml`；
-設定視窗上方就寫著實際路徑）。
+字級、透明度、行數、位置在設定視窗裡調，立即生效。完整設定在 `config.toml`：
+
+| 安裝方式 | 設定檔位置 |
+|---|---|
+| Flatpak | `~/.var/app/io.github.AquilaWei.LiveInterpreter/config/liveinterpreter/config.toml` |
+| rpm / deb | `~/.config/liveinterpreter/config.toml` |
+
+設定視窗上方會顯示實際路徑。沒有設定檔時使用預設值，預設值都是量測後選的。每個選項的
+說明在 [`crates/li-core/src/config.rs`](crates/li-core/src/config.rs)。
 
 逐字稿預設寫到 `~/Documents/LiveInterpreter/`。
 
 ---
 
-## 授權
+## 從原始碼建置
 
-程式碼是 **Apache-2.0**（[`LICENSE`](LICENSE)）。repo 裡不是每樣東西都適用它，
-完整的一份在 [`NOTICE`](NOTICE)。
+```bash
+git clone https://github.com/AquilaWei/LiveInterpreter
+cd LiveInterpreter
+./scripts/build.sh                  # 請用這個腳本，不要直接 cargo build
+./scripts/run.sh --list-devices
+```
 
-**要注意的一件事**：預設的翻譯模型 NLLB-200-distilled-600M 是 **CC-BY-NC-4.0，
-不可商用**。它不在 repo 也不在安裝包裡，是第一次執行時下載的。自己用沒問題；
-要拿去做產品就得換掉，MT 後端在 trait 後面（`crates/li-mt`）。
+建置前請先看 [`BUILDING.md`](BUILDING.md)：Vulkan 後端需要 SPIRV-Headers，有些發行版沒有
+打包，要自己裝一份。Flatpak 用 `./scripts/flatpak.sh` 建，主機不需要安裝 flatpak-builder。
+
+測試：
+
+```bash
+./scripts/build.sh test --workspace
+```
+
+需要模型的測試在沒有模型時會印出 `SKIP` 並通過。`cargo xtask eval` 可以在
+[`testdata/`](testdata/README.md) 的音檔上重跑延遲與錯誤率量測。
 
 ---
 
-## 想看細節
+## 技術棧
 
-| | |
+| 部分 | 使用 |
 |---|---|
-| [`CHANGELOG.md`](CHANGELOG.md) | 每一版改了什麼、為什麼 |
-| [`BUILDING.md`](BUILDING.md) | 建置的細節與各平台的坑 |
-| [`testdata/README.md`](testdata/README.md) | 評估用的音檔從哪來、各自量什麼 |
+| 語言 | Rust（8 個 crate 的 workspace + 命令列 + 桌面版） |
+| 快線辨識 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) streaming Zipformer（CPU），另有小模型補標點與大小寫 |
+| 精準線辨識 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `small.en` q5_1（Vulkan），無 GPU 時退回 `base.en` |
+| 語音偵測 | Silero VAD，ONNX Runtime |
+| 翻譯 | NLLB-200-distilled-600M int8，[CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN（CPU） |
+| 簡轉繁 | OpenCC `s2twp`，字典編進執行檔 |
+| 音訊擷取 | PulseAudio（Linux）、cpal |
+| 介面 | [Tauri 2](https://tauri.app/)，前端為純 HTML + JavaScript |
+| 打包 | Flatpak、rpm、deb |
+| CI | GitHub Actions：`cargo fmt`、`clippy -D warnings`、全部測試 |
 
-這個專案的規矩是**先量再做**：每個預設值背後都有一次量測，理由寫在設定它的程式碼
-註解裡。`cargo xtask eval` 可以在測試音檔上自己重跑延遲與 WER。
+---
+
+## 授權
+
+程式碼採用 **Apache-2.0**（[`LICENSE`](LICENSE)）。第三方素材各有授權，完整清單見
+[`NOTICE`](NOTICE)。
+
+> [!IMPORTANT]
+> 預設的翻譯模型 **NLLB-200-distilled-600M 是 CC-BY-NC-4.0，不可商用**。它不在 repo 也
+> 不在安裝包裡，是第一次執行時下載的。個人使用沒有問題；若要用於商業用途，需要換掉翻譯
+> 後端（見 `crates/li-mt`）。
+
+---
+
+## 更多
+
+- [`CHANGELOG.md`](CHANGELOG.md) — 每個版本改了什麼、為什麼
+- [`BUILDING.md`](BUILDING.md) — 建置細節與各平台的坑
+- [`testdata/README.md`](testdata/README.md) — 評估用音檔的來源與用途
