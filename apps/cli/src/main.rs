@@ -1,4 +1,4 @@
-//! `liveinterpreter` — the whole pipeline on a terminal (PLAN §17, task 1.8).
+//! `liveinterpreter` — the whole pipeline on a terminal.
 //!
 //! This is the alpha checkpoint: the first build that can be used rather than
 //! measured. It is also the debugging tool for everything after it — when the
@@ -226,7 +226,7 @@ fn list_devices() -> Result<()> {
 /// Apply the command line over the config file.
 ///
 /// The file is the settings; the flags are for one run. Nothing here writes the
-/// file back — that is the settings window's job (task 1.10).
+/// file back — that is the settings window's job.
 fn resolve(args: &Args) -> Result<EngineConfig> {
     let mut cfg = match &args.config {
         Some(p) => EngineConfig::load_from(p)?,
@@ -316,12 +316,12 @@ async fn run(args: Args) -> Result<()> {
 /// opened it, by which time the speaker is usually a sentence further on, so a
 /// settled line routinely arrives after the row has moved on. Following
 /// whichever line the last event named -- which is what this did until task
-/// 1.9 -- makes the display rewind to the previous sentence and then jump
+/// bar -- makes the display rewind to the previous sentence and then jump
 /// forward again, several times a minute. A late line is dropped from the
 /// screen instead; `li-transcript` already has it, and the file is where the
-/// accurate text is meant to end up (PLAN §2.6).
+/// accurate text is meant to end up.
 ///
-/// The floating bar of task 1.9 follows the same rule, so the two can be
+/// The floating bar follows the same rule, so the two can be
 /// compared when one of them looks wrong.
 #[derive(Default)]
 struct Shown {

@@ -1,6 +1,6 @@
 //! A recorded minute of subtitle, for looking at the bar without an engine.
 //!
-//! PLAN §19.3 asks a question no measurement answers: when the accurate lane
+//! This asks a question no measurement answers: when the accurate lane
 //! replaces the fast lane's text in place, is reading disturbed? Only a person
 //! can say, and asking them costs 3 GB of models, a machine with a GPU, and
 //! something in English playing -- so it never gets asked, and the answer
@@ -13,7 +13,7 @@
 //!
 //! 1. **The overwrite.** A pause after the sentence, so the accurate lane's
 //!    punctuated text lands while its own line is still on the bar. The good
-//!    case, and the one §12.2 is written for.
+//!    case, and the one the commit policy is written for.
 //! 2. **The late answer.** Continuous speech, so the accurate lane's answer for
 //!    a line arrives after the next line has already taken the row. The bar
 //!    drops it (see `main.js`): the transcript keeps it, and the row never
@@ -35,8 +35,8 @@ const LINES: u64 = 5;
 /// `(milliseconds from the start of the loop, event)`.
 ///
 /// The offsets are the measured ones: the fast lane reaches the screen ~0.8 s
-/// after the audio it describes (task 1.0a), the accurate lane ~2 s after that,
-/// and the translation ~0.3 s after the text it is made from (tasks 1.6, 1.17).
+/// after the audio it describes, the accurate lane ~2 s after that,
+/// and the translation ~0.3 s after the text it is made from.
 fn script(base: u64) -> Vec<(u64, UiEvent)> {
     let id = |n: u64| base + n;
     let partial = |n: u64, text: &str| UiEvent::Partial {
@@ -146,7 +146,7 @@ fn script(base: u64) -> Vec<(u64, UiEvent)> {
         (11000, zh(3, "第二項是在地化工作，繁體中文的部分快完成了。")),
         // 4. A line the accurate lane never answered: promoted fast-lane text,
         //    with no punctuation and no capitals. This is what 8 s of silence
-        //    from whisper looks like on the bar (PLAN §12.2).
+        //    from whisper looks like on the bar.
         (
             12600,
             partial(4, "and the last thing is the demo on friday"),

@@ -1,4 +1,4 @@
-// The first-run model download (PLAN §17 task 1.13).
+// The first-run model download.
 //
 // This window opens instead of the engine starting, because the engine cannot
 // start: `li_core::models::resolve` fails on the first model it cannot find,

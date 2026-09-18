@@ -1,6 +1,6 @@
 //! Streaming input-level normalisation.
 //!
-//! Not cosmetic. Task 1.0a found the user's own meeting recording sat about
+//! Not cosmetic. A real meeting recording sat about
 //! 11 dB below LibriSpeech, and on a level-sensitive streaming model that alone
 //! took recognition from 168 words to 16 over the same two minutes. Corpus audio
 //! is mastered; a microphone in a room or a loopback tap from a quiet player is

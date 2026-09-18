@@ -1,10 +1,10 @@
-# Flatpak manifest (PLAN task 1.14b).
+# Flatpak manifest.
 #
 # Why this exists at all: the binaries in `target/release/` require GLIBC_2.43
-# (`readelf -V`), so the .rpm and .deb of 1.14 only install on Fedora 43 and
+# (`readelf -V`), so the .rpm and .deb only install on Fedora 44 and
 # nothing older -- not "the package names are unverified elsewhere", but "it
 # does not reach main". A flatpak is what makes the thing installable by
-# anyone else. See docs/phase1/TASK_1_14B_FLATPAK_SPIKE.md §4.
+# anyone else.
 #
 # Which also rules out the cheap path. Tauri's official flatpak recipe unpacks
 # a host-built .deb; measured, that dies with
@@ -48,12 +48,12 @@ finish-args:
   # line of defence.
   - --device=dri
   # The floating bar forces GDK_BACKEND=x11 (`prefer_x11`, apps/desktop/
-  # src-tauri/src/main.rs) because the global hotkeys of task 1.10 are X11
+  # src-tauri/src/main.rs) because the global hotkeys are X11
   # key grabs. --share=ipc is the standard companion for X11 shared memory.
   - --socket=x11
   - --share=ipc
-  # Task 1.13's model downloader: ~1 GB from HuggingFace and one GitHub
-  # release, on first run. Later also 1.16(b)'s update check.
+  # The model downloader: ~1 GB from HuggingFace and one GitHub
+  # release, on first run. Later also an update check.
   - --share=network
   # Transcripts. `[transcript] dir` defaults to ~/Documents/LiveInterpreter
   # (crates/li-transcript/src/lib.rs). Leave this out and a whole meeting
@@ -143,7 +143,7 @@ modules:
     build-commands:
       # Go through scripts/build.sh rather than bare cargo, for the same two
       # reasons scripts/package.sh does: the SPIRV-Headers prefix, and the
-      # onednn-src lib64->lib retry (PLAN §19-24). Using the same script here
+      # onednn-src lib64->lib retry. Using the same script here
       # as on the host keeps them from drifting.
       - scripts/build.sh build --release -p li-cli -p li-desktop
 
@@ -161,7 +161,7 @@ modules:
       #
       # /app/bin -> /app/lib/LiveInterpreter is exactly the relative step the
       # existing runpath already describes ($ORIGIN/../lib/LiveInterpreter,
-      # written for /usr/bin -> /usr/lib in 1.14), so build.rs needs no change.
+      # written for /usr/bin -> /usr/lib for the rpm/deb), so build.rs needs no change.
       - install -Dm644 target/release/libonnxruntime.so /app/lib/LiveInterpreter/libonnxruntime.so
       - install -Dm644 target/release/libsherpa-onnx-c-api.so /app/lib/LiveInterpreter/libsherpa-onnx-c-api.so
       - install -Dm644 target/release/libsherpa-onnx-cxx-api.so /app/lib/LiveInterpreter/libsherpa-onnx-cxx-api.so
@@ -181,17 +181,16 @@ modules:
       #
       # **Skip only what git does not track.** The stamp also asks whether the
       # tree was dirty, and a skipped *tracked* file reads as a deletion: with
-      # `testdata` and `poc` skipped wholesale, a build from a clean commit
+      # `testdata` skipped wholesale, a build from a clean commit
       # stamped itself `56f4f534 2026-09-17, modified`. The build.rs comment
       # says that stamp exists to be believed, so the list below names the
-      # three things that are genuinely not in the repository. Cost of keeping
+      # things that are genuinely not in the repository. Cost of keeping
       # the rest: the copy goes from 21 MB to 44 MB, against a build that
       # fetches several hundred crates.
       - type: dir
         path: ../..
         skip:
           - target
-          - poc/.venv
           - 08_28_2026_meeting.mp3
 
 cleanup:

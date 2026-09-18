@@ -1,7 +1,7 @@
-//! Where this program's own files live, on each platform (PLAN §14, §15).
+//! Where this program's own files live, on each platform.
 //!
 //! Three crates needed the user's home directory and each worked it out for
-//! itself, which is how task 1.11 found this: two of them had grown a
+//! itself, which is how the Windows port found this: two of them had grown a
 //! `USERPROFILE` fallback for Windows and the one that reads `config.toml` had
 //! not. That failure is quiet in the worst way -- `var("HOME")` on Windows does
 //! not fail loudly, it returns `Err` into an `unwrap_or_default()`, so the path
@@ -12,7 +12,7 @@
 //!
 //! So the rules live here, once, and the platform is a parameter rather than a
 //! `cfg!` buried in an expression -- which means the Windows rules can be
-//! tested on the Linux machine this was written on, the only part of task 1.11
+//! tested on the Linux machine this was written on, the only part of the Windows port
 //! that can be.
 //!
 //! The layouts are each platform's own convention rather than one shared
@@ -109,7 +109,7 @@ fn model_cache_from(p: Platform, env: impl Fn(&str) -> Option<String>) -> PathBu
             .join("LiveInterpreter/models"),
         // `XDG_CACHE_HOME` before `$HOME/.cache`, the same way the config
         // file honours `XDG_CONFIG_HOME` above. This was written the other way
-        // round until task 1.14b, and in a flatpak the difference is a
+        // round until the Flatpak, and in a flatpak the difference is a
         // gigabyte: the sandbox gives the app a **tmpfs** home and points
         // `XDG_CACHE_HOME` at the one directory that survives
         // (`~/.var/app/<id>/cache`). Measured -- the downloader fetched all
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn xdg_cache_home_wins_over_the_home_directory() {
-        // The flatpak case (task 1.14b), and the reason this is not cosmetic:
+        // The flatpak case, and the reason this is not cosmetic:
         // inside the sandbox `$HOME` is a tmpfs and only the directory named
         // here survives the process. Getting this wrong throws away a
         // gigabyte of downloaded models on every exit.

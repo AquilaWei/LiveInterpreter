@@ -1,6 +1,6 @@
 [package]
 name = "li-core"
-description = "Pipeline assembly, config and event bus (PLAN §10.3, §11)"
+description = "Pipeline assembly, config and event bus"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -35,7 +35,7 @@ serde_json = { workspace = true }
 
 [features]
 # Passed straight through to the lanes. None is on by default: each GPU backend
-# adds a build-time dependency (PLAN §8.1), and which kernels to compile in is a
+# adds a build-time dependency, and which kernels to compile in is a
 # decision for the binary being shipped, not for a library.
 gpu-vulkan = ["li-asr/gpu-vulkan"]
 gpu-cuda = ["li-asr/gpu-cuda"]

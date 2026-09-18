@@ -1,7 +1,7 @@
-//! When a restored full stop is worth ending a line on (PLAN task 1.25, S2).
+//! When a restored full stop is worth ending a line on (the semantic cut).
 //!
 //! The fast lane's endpoint detector asks the audio: 0.6 s of silence closes a
-//! line. Task 1.24 measured what happens when that number is lowered and the
+//! line. It was measured what happens when that number is lowered and the
 //! answer was a clear no -- conversation hesitates mid-sentence, and
 //! `ami_meeting`'s content WER went from 14.7% to 21.9%. So the acoustic route
 //! is finished, and this is the other one: ask the *words* where the sentence
@@ -14,7 +14,7 @@
 //!
 //! # The rule, and where each number came from
 //!
-//! Task 1.25's E2 ran the punctuation model over ~960 fast-lane partials across
+//! A measurement ran the punctuation model over ~960 fast-lane partials across
 //! six clips and watched what the marks did before the line closed. Three of
 //! the four conditions below are read off that measurement; the fourth is not,
 //! and says so.

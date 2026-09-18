@@ -1,7 +1,7 @@
-//! Checks this crate against the Phase 0 Python implementation it replaces.
+//! Checks this crate against the Python prototype it replaces.
 //!
-//! `nllb_reference.json` was produced by running `poc/liveinterpreter_poc/mt.py`
-//! unchanged over 53 lines -- real accurate-lane output from the task 1.5 eval,
+//! `nllb_reference.json` was produced by running the prototype's `mt.py`
+//! unchanged over 53 lines -- real accurate-lane output from an eval run,
 //! promoted fast-lane text, technical sentences that separate zh-CN from zh-TW
 //! usage, and the degenerate fragments `li-stream` really does hand over. It
 //! records, for each: the token sequence transformers built, the hypothesis
@@ -106,7 +106,7 @@ fn the_source_tokens_match_transformers_exactly() {
     assert!(checked >= 45);
 }
 
-/// Phase 0's settings (greedy, one call per line, no trimming) against Phase
+/// The prototype's settings (greedy, one call per line, no trimming) against the prototype
 /// 0's output.
 ///
 /// This does **not** assert equality, and the reason is worth stating: the int8
@@ -157,11 +157,11 @@ fn phase_0_settings_reproduce_phase_0_output() {
     }
     let agreement = same as f64 / total as f64;
     eprintln!(
-        "reproduced {same}/{total} Phase 0 lines ({:.0}%)",
+        "reproduced {same}/{total} prototype lines ({:.0}%)",
         100.0 * agreement
     );
     assert!(
         agreement >= 0.6,
-        "only {same}/{total} lines reproduced Phase 0"
+        "only {same}/{total} lines reproduced the prototype"
     );
 }

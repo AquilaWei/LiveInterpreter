@@ -1,6 +1,6 @@
 [package]
 name = "li-transcript"
-description = "Transcript writers: txt/srt/vtt/jsonl (PLAN §2.6)"
+description = "Transcript writers: txt/srt/vtt/jsonl"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

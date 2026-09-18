@@ -1,4 +1,4 @@
-//! Fast lane: sherpa-onnx streaming Zipformer (PLAN §8.2).
+//! Fast lane: sherpa-onnx streaming Zipformer.
 //!
 //! ## Why this is FFI and not `sherpa-rs`
 //!
@@ -8,10 +8,10 @@
 //! only for keyword spotting and speaker id. An offline recognizer re-runs the
 //! encoder over whatever you hand it, which is the accurate lane's shape, not
 //! this one's — using it here would give up the single property the fast lane
-//! exists for: latency that does not grow with the buffer (§12.1).
+//! exists for: latency that does not grow with the buffer.
 //!
 //! So this lane talks to `sherpa-rs-sys` directly. The surface is eight
-//! functions and it is the same one the Phase 0 PoC drove through Python.
+//! functions and it is the same one the Python prototype drove.
 //!
 //! ## Segmentation is the backend's
 //!
@@ -55,7 +55,7 @@ const FEATURE_DIM: i32 = 80;
 const RULE1_SILENCE: f32 = 2.4;
 
 /// Nominal duration of the final piece of a segment, which has no successor to
-/// bound it. Same value as the Phase 0 PoC.
+/// bound it. Same value as the Python prototype.
 const LAST_PIECE: Duration = Duration::from_millis(120);
 
 /// Silence pushed through the encoder by [`AsrEngine::finalize`] so the tail of
@@ -87,7 +87,7 @@ impl SherpaFast {
         if !dir.is_dir() {
             bail!(
                 "fast-lane model directory not found: {}\n\
-                 Download a streaming Zipformer (PLAN §15) or point `[asr.fast] model` at one.",
+                 Download a streaming Zipformer or point `[asr.fast] model` at one.",
                 dir.display()
             );
         }
@@ -147,7 +147,7 @@ impl SherpaFast {
                     .unwrap_or_else(|| dir.display().to_string()),
                 // The fast lane is CPU by decision, not by fallback: it costs
                 // ~0.3 GB and one core, and leaving the GPU entirely to the
-                // accurate lane is the point (§8.1).
+                // accurate lane is the point.
                 selection: Selection {
                     accel: Accel::Cpu,
                     gpu_index: 0,
@@ -321,7 +321,7 @@ impl AsrEngine for SherpaFast {
                 text,
                 // Timings for a partial would cost a JSON round trip 30x a
                 // second for a line that is about to be overwritten. The fast
-                // lane's partials are screen-only (§8.2); nothing downstream
+                // lane's partials are screen-only; nothing downstream
                 // aligns on them.
                 words: Vec::new(),
             });
@@ -399,8 +399,8 @@ fn cstring(p: &Path) -> Result<CString> {
 ///
 /// Their names carry the training epoch and the chunk/left-context sizes, so
 /// they differ between releases and cannot be hard-coded. Both a float and an
-/// int8 export ship in the same directory; int8 is what task 1.0a measured
-/// (179 MiB, WER 21.2-21.5% on the AMI clips) and what §8 locks in.
+/// int8 export ship in the same directory; int8 is what was measured
+/// (179 MiB, WER 21.2-21.5% on the AMI clips) and what ships.
 #[derive(Debug, PartialEq, Eq)]
 struct ModelFiles {
     encoder: PathBuf,

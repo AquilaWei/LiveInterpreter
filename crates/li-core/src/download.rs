@@ -1,4 +1,4 @@
-//! Fetching the models the config asks for (PLAN task 1.13).
+//! Fetching the models the config asks for.
 //!
 //! Until this existed, [`crate::models::Models::resolve`] failing was the end
 //! of the story: it printed where to look and the program stopped. That made
@@ -15,7 +15,7 @@
 //! 2. **A wrong hash is an error, not a retry.** The manifest's hashes were
 //!    computed from the copies this project measured its WER on, so a mismatch
 //!    means the file on the other end is not the file the numbers describe.
-//!    Quietly accepting it would make every measurement in `docs/` a claim
+//!    Quietly accepting it would make every published measurement a claim
 //!    about something else.
 //! 3. **Resume, because 613 MB.** A `.part` that is already there is continued
 //!    with a `Range:` request. Servers that ignore it are handled by starting

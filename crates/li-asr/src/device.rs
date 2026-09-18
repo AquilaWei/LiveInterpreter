@@ -1,4 +1,4 @@
-//! Which compute backend the accurate lane runs on (PLAN §8.1).
+//! Which compute backend the accurate lane runs on.
 //!
 //! The rule the plan sets is "probe at startup, pick a backend, fall back to
 //! CPU on failure, and report what was actually chosen". Two details make that
@@ -31,7 +31,7 @@
 //!   in a flatpak without `--device=dri`: no device, clean CPU fallback. The
 //!   guard is here because that is an upstream implementation detail rather
 //!   than a contract, and because the raw Vulkan enumeration in the very same
-//!   sandbox *does* offer `llvmpipe` (task 1.14b §2). It has not been seen to
+//!   sandbox *does* offer `llvmpipe`. It has not been seen to
 //!   fire.
 //!
 //! [`Probe::Unavailable`] is left for the case that remains: a build with no
@@ -47,7 +47,7 @@ pub enum Accel {
     Vulkan,
     Cuda,
     /// Intel oneAPI SYCL. whisper.cpp has no OpenVINO path in `whisper-rs`
-    /// 0.16, and OpenVINO only accelerates the encoder anyway (§8.1).
+    /// 0.16, and OpenVINO only accelerates the encoder anyway.
     Sycl,
     /// AMD ROCm, via hipBLAS.
     Hip,
@@ -115,8 +115,7 @@ pub struct GpuInfo {
     pub index: i32,
     pub name: String,
     /// Total device memory in bytes, as ggml reports it. On a UMA integrated
-    /// GPU this is system RAM, so it is not headroom the CPU also gets to use
-    /// (task 1.0b).
+    /// GPU this is system RAM, so it is not headroom the CPU also gets to use.
     pub total_bytes: usize,
 }
 
@@ -151,7 +150,7 @@ pub enum Probe {
 /// ("If only CPU devices are available, return without devices",
 /// `ggml-vulkan.cpp`), so the registry never offers one.
 ///
-/// Measured in a flatpak without `--device=dri` (task 1.14b): the accurate
+/// Measured in a flatpak without `--device=dri`: the accurate
 /// lane fell back to the CPU with no Vulkan device at all, so **this has never
 /// been seen to fire**. It stays because that upstream skip is an
 /// implementation detail rather than a promise, and because the raw Vulkan
@@ -183,7 +182,7 @@ pub struct Selection {
 }
 
 /// What this engine loaded and what it is running on. Reaches `EngineStatus`
-/// and the settings UI (PLAN §8.1).
+/// and the settings UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendInfo {
     pub engine: &'static str,
@@ -211,7 +210,7 @@ impl std::fmt::Display for BackendInfo {
 /// Backends this binary was built with, most preferred first.
 ///
 /// Vulkan comes last on purpose. It is the *default* backend because it is the
-/// one that works everywhere (§8.1), but a vendor backend is only ever compiled
+/// one that works everywhere, but a vendor backend is only ever compiled
 /// in because somebody asked for it at build time, and ignoring that under
 /// `auto` would make the feature flag do nothing.
 pub fn compiled_accels() -> Vec<Accel> {
@@ -303,7 +302,7 @@ mod ggml {
                 }
                 let kind = sys::ggml_backend_dev_type(dev);
                 // An integrated GPU counts: it is the machine this project was
-                // developed on (Arc 140V), and task 1.0b measured 2.3x on it.
+                // developed on (Arc 140V), and it measured 2.3x there.
                 if kind != sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU
                     && kind != sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_IGPU
                 {
@@ -426,7 +425,7 @@ pub fn select(req: DeviceRequest, compiled: &[Accel], probe: impl Fn(Accel) -> P
 /// bare system it means the real driver is not installed.
 ///
 /// Deduplicated: a flatpak sandbox enumerates each physical device twice
-/// (measured, task 1.14b), so the raw list says `llvmpipe, llvmpipe`.
+/// (measured in the Flatpak sandbox), so the raw list says `llvmpipe, llvmpipe`.
 fn software_note(accel: Accel, names: &[String]) -> String {
     let mut seen: Vec<&str> = Vec::new();
     for n in names {
@@ -509,7 +508,7 @@ mod tests {
 
     fn software() -> Probe {
         // Two entries, because that is what a flatpak sandbox actually
-        // enumerates: it scans the ICDs twice (task 1.14b).
+        // enumerates: it scans the ICDs twice.
         Probe::SoftwareOnly(vec![
             "llvmpipe (LLVM 21.1.1, 256 bits)".into(),
             "llvmpipe (LLVM 21.1.1, 256 bits)".into(),

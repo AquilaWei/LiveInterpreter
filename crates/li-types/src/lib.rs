@@ -1,4 +1,4 @@
-//! Types shared by every stage of the pipeline (PLAN §10.1).
+//! Types shared by every stage of the pipeline.
 //!
 //! Nothing here depends on a backend, a runtime, or a platform, so the crates
 //! either side of an interface can agree on a vocabulary without depending on
@@ -9,9 +9,9 @@
 //! * **Two clocks.** [`Duration`] fields are positions on the *audio* timeline,
 //!   measured from the start of the session. [`Instant`] fields are wall time,
 //!   for latency measurement. Latency is "audio for this sentence *ends*" ->
-//!   "text on screen" (PLAN §7), so mixing the two silently reports nonsense.
+//!   "text on screen", so mixing the two silently reports nonsense.
 //! * **Sentences carry a real span.** `t_start` and `t_end` are the first and
-//!   last word of the sentence. The Phase 0 PoC filled both with the same
+//!   last word of the sentence. The Python prototype filled both with the same
 //!   value and every SRT block came out zero-length.
 //!
 //! The one exception to "no platform" is [`paths`], which is *about* the
@@ -58,7 +58,7 @@ pub struct Word {
 /// the fast lane has a higher error rate, and a reader of the `.jsonl` needs to
 /// be able to tell.
 ///
-/// Since task 1.25 it also has punctuation and casing -- which is why the flag
+/// It now also has punctuation and casing -- which is why the flag
 /// matters more, not less. The marks are **restored by a model that reads the
 /// words**, not heard; on the user's own sessions that model puts a boundary in
 /// the right place 84% of the times it opens its mouth, and finds 58% of the
@@ -71,7 +71,7 @@ pub enum Lane {
     Accurate,
 }
 
-/// Why a line ended up attributed to the fast lane (PLAN §12.2).
+/// Why a line ended up attributed to the fast lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FastReason {
@@ -79,11 +79,11 @@ pub enum FastReason {
     AccurateTimeout,
     /// The accurate lane delivered, but materially shorter than the fast lane --
     /// whisper drops whole clauses when unsure, and the hole must not reach the
-    /// transcript file (gate G2b; measured in task 1.0c).
+    /// transcript file (gate G2b).
     AccurateTruncated,
     /// The accurate lane delivered, but materially *longer* than the fast lane
     /// and repeating itself. Whisper's decoder gets stuck in a loop and emits
-    /// the same clause several times over (task 1.4 reproduced it on demand by
+    /// the same clause several times over (reproduced on demand by
     /// cropping the encoder context: content WER 15.2% -> 36.1%). The fast lane
     /// never loops, so its word count is the reference either way.
     AccurateLooped,
@@ -101,7 +101,7 @@ pub enum AsrEvent {
         /// them cheaply. `li-stream` aligns the two lanes on the audio
         /// timeline, so the accurate lane always fills this; the fast lane
         /// leaves it empty, because its partials only ever reach the screen
-        /// (PLAN §8.2) and timing every one of them would cost a decode round
+        /// and timing every one of them would cost a decode round
         /// trip 30 times a second for a line that is about to be replaced.
         words: Vec<Word>,
     },
@@ -124,12 +124,12 @@ pub enum EngineEvent {
         /// `Some(t_end)` once the fast lane has stopped revising this text: it
         /// reached its own endpoint, closed the line, and fixed its span. The
         /// value is where the line's audio ends, which is what latency is
-        /// measured from (PLAN §7). `None` while the words are still moving.
+        /// measured from. `None` while the words are still moving.
         ///
         /// Three things read it. A front end can stop treating the line as a
         /// half-finished hypothesis -- show it from the start rather than
         /// keeping the tail. `li-core` hands it to the translator as a draft,
-        /// worth about half a second on screen (PLAN §12.4); a partial that is
+        /// worth about half a second on screen; a partial that is
         /// still being revised must never go there, because they arrive dozens
         /// of times a second. And the same `t_end` dates the draft, so its
         /// latency is comparable with the settled line's.
@@ -202,7 +202,7 @@ impl EngineStatus {
 /// front end: JSON has no duration, and adding a variant must not be a breaking
 /// change for a UI that ignores it. Seconds as `f64`, one flat `kind` tag,
 /// and the same shape for Tauri's `emit` and for the UniFFI callbacks of
-/// Phase 2.
+/// Android.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UiEvent {
@@ -311,7 +311,7 @@ impl From<&EngineEvent> for UiEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
-    /// The line was settled: PLAN §16's G1 (fast lane) and G2 (accurate).
+    /// The line was settled: gate G1 (fast lane) and G2 (accurate).
     Source,
     /// A translation reached the screen for it -- the draft or the settled one,
     /// told apart by `settled`.
@@ -319,7 +319,7 @@ pub enum Stage {
 }
 
 /// One latency observation, kept per lane because the two are held to different
-/// gates: the fast lane owns G1, the accurate lane owns G2 (PLAN §16).
+/// gates: the fast lane owns G1, the accurate lane owns G2.
 #[derive(Debug, Clone, Copy)]
 pub struct LatencySample {
     pub line_id: u64,
@@ -330,13 +330,13 @@ pub struct LatencySample {
     pub settled: bool,
     /// End of this sentence's audio -> text on screen.
     ///
-    /// PLAN §7 pins the start of that interval: the moment the audio for the
+    /// The start of that interval is the moment the audio for the
     /// sentence *ends*, not the moment it began. Both are wall clock, not
     /// audio positions -- see the two-clocks note at the top of this file.
     pub latency: Duration,
 }
 
-/// One line as written to the transcript (PLAN §2.6).
+/// One line as written to the transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptLine {
     pub line_id: u64,
@@ -366,7 +366,7 @@ pub struct DeviceInfo {
 /// without leaving the previous variant's `id` key behind. It is also the same
 /// spelling the CLI's `--source` takes, so there is one thing to remember.
 ///
-/// PLAN §14 had `source` plus a separate `device_id`; one string says the same
+/// The first schema had `source` plus a separate `device_id`; one string says the same
 /// and cannot express the contradiction of `source = "mic"` with a device id
 /// set. A device genuinely named `system` or `mic` would be shadowed, which no
 /// PulseAudio node name (`alsa_output...monitor`) or WASAPI id looks like.

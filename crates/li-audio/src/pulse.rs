@@ -1,4 +1,4 @@
-//! Linux capture through the PulseAudio API (PLAN §2.1).
+//! Linux capture through the PulseAudio API.
 //!
 //! cpal cannot do this job on Linux. Its only Linux hosts are ALSA and JACK,
 //! and **monitor sources do not exist at the ALSA layer** -- they are a
@@ -13,7 +13,7 @@
 //!
 //! The server is asked for 16 kHz mono f32 directly and does the conversion,
 //! which is both better and cheaper than doing it here -- the same arrangement
-//! the Phase 0 PoC validated through `parec`.
+//! the Python prototype validated through `parec`.
 
 use std::sync::{Arc, Mutex};
 
@@ -172,7 +172,7 @@ impl AudioSource for PulseSource {
         let agc_on = self.agc;
 
         // `Simple` is a blocking read API, so it gets a thread. That is the
-        // right shape anyway: PLAN §11 wants capture doing nothing but filling
+        // right shape anyway: the threading rules want capture doing nothing but filling
         // a buffer, with no inference or I/O on the same path.
         std::thread::spawn(move || {
             // Ask for one frame at a time. Left to itself the server picks the
@@ -247,7 +247,7 @@ impl AudioSource for PulseSource {
                         tracing::info!(ms = l.0 / 1000, "audio server latency");
                     }
                 }
-                // Bounded: drop old audio rather than grow a queue (§11).
+                // Bounded: drop old audio rather than grow a queue.
                 // Losing a frame costs a word; an unbounded queue costs the gate.
                 match tx.try_send(AudioFrame {
                     pcm,

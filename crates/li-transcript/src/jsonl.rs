@@ -3,13 +3,13 @@
 //! ## Why a line can appear twice
 //!
 //! A line's source text is final the moment the accurate lane commits it; its
-//! translation arrives a few hundred milliseconds later (task 1.6 measured
+//! translation arrives a few hundred milliseconds later (measured
 //! 195-368 ms), by which time the source is already on disk. The two ways out
 //! of that are to hold the record back until the translation lands, or to write
 //! what is known and patch it afterwards.
 //!
 //! Holding it back loses recognised speech on a crash, which is the one thing
-//! PLAN §2.6 asks this crate not to do. So the file is a log: the source
+//! this crate must not do. So the file is a log: the source
 //! record goes down immediately, and a translation appends a second record
 //! carrying the same `line_id` and nothing but the new field. **A reader folds
 //! the file by `line_id`, last value wins** -- which is what [`read`] does.
@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 /// One record as it appears in the file.
 ///
 /// Every field but `line_id` is optional, because a patch record carries only
-/// what changed. Field names follow PLAN §2.6 (`start`/`end`, in seconds)
+/// what changed. Field names are `start`/`end`, in seconds,
 /// rather than the Rust field names, which carry their unit instead.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Record {
@@ -38,9 +38,9 @@ pub struct Record {
     pub start: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<f64>,
-    /// The pre-translation source text. PLAN §12.2 called this field `source`
+    /// The pre-translation source text. An early draft called this field `source`
     /// and also used `"source": "fast"` for the lane; the lane is `lane` here,
-    /// as PLAN §2.6 and [`TranscriptLine`] have it.
+    /// as [`TranscriptLine`] has it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

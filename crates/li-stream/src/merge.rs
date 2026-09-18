@@ -1,10 +1,10 @@
-//! Choosing between the two lanes for one subtitle line (PLAN §12.2).
+//! Choosing between the two lanes for one subtitle line.
 //!
 //! The fast lane is the reference, not because it is more accurate -- it is
 //! not, by 5-7 WER points -- but because its failure modes are *small*. It
 //! mis-hears words. It never drops a clause and it never repeats one. Whisper
 //! does both, and both are invisible to a WER number while being exactly the
-//! failures that ruin a subtitle and corrupt the transcript file §2.6 requires.
+//! failures that ruin a subtitle and corrupt the transcript file.
 //! So the accurate lane's text is accepted unless it disagrees with the fast
 //! lane about *how much was said*, in either direction.
 
@@ -22,16 +22,16 @@ use crate::{Decision, StreamConfig};
 ///
 /// **Too short.** Whisper's decoder is a language model and condenses when it
 /// is unsure, so it does not merely mis-hear -- it drops whole clauses. Task
-/// 1.0c measured this across six clips: `base.en` dropped nothing, but `small`
+/// Measured across six clips: `base.en` dropped nothing, but `small`
 /// and `medium` each lost a run of five or more words on three of the six, up
 /// to 20 words at once, while the fast lane never did. That defeats the timeout
 /// rule, because the accurate lane *did* answer; it just answered short.
 ///
-/// **Too long.** The same engine also gets stuck repeating a clause. Task 1.4
+/// **Too long.** The same engine also gets stuck repeating a clause. A benchmark
 /// reproduced it on demand and measured the damage (content WER 15.2% ->
 /// 36.1%), and it is the mirror image: the output is longer, so a ratio guard
 /// written only for the short case never fires. The engine-level fix is not to
-/// crop whisper's encoder context (PLAN §12.3), but that is a mitigation, not a
+/// crop whisper's encoder context, but that is a mitigation, not a
 /// guarantee -- whisper loops occasionally anyway.
 ///
 /// Both guards are measured in content words and both need an absolute
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn a_dropped_clause_does_not_overwrite_the_fast_lane() {
-        // What small.en actually returned for this span in task 1.0c: the
+        // What small.en actually returned for this span: the
         // "first meeting surprisingly enough this is our" clause is gone.
         let d = decide(&cfg(), Some(FAST), Some("This is our agenda."), false).unwrap();
         assert_eq!(d.lane, Lane::Fast);
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn a_repetition_loop_does_not_overwrite_the_fast_lane() {
-        // Verbatim from task 1.4's cropped-encoder run on `ami_meeting2`,
+        // Verbatim from a cropped-encoder run on `ami_meeting2`,
         // against the fast lane's text for the same span.
         let fast = "AND THEN WHEN YOU GO ON THE MENU YOU CAN SELECT THE SUMMARIZATION BOX";
         let acc = "And then when you go on the menu, you can select the description box, \

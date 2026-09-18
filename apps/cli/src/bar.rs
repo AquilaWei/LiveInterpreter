@@ -1,11 +1,11 @@
 //! The two-line subtitle, redrawn in place.
 //!
-//! PLAN §2.3 wants one source line and one translation line that are *replaced*
+//! The design wants one source line and one translation line that are *replaced*
 //! rather than appended: the fast lane's text appears dimmed within a second,
 //! and the accurate lane's replaces it about a second later without the reader
 //! losing their place. A scrolling log cannot show that, and it is the one
-//! behaviour of the product that has never been looked at by a person -- PLAN
-//! §19.3 is the open question, and this is the cheapest thing that can answer
+//! behaviour of the product that has never been looked at by a person -- whether an in-place
+//! correction reads as a fix or as flicker is the open question, and this is the cheapest thing that can answer
 //! it.
 //!
 //! Redrawing means erasing what was printed last time, so the bar tracks how

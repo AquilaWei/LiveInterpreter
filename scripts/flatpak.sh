@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Flatpak (task 1.14b). Output: target/flatpak/LiveInterpreter.flatpak
+# Build the Flatpak. Output: target/flatpak/LiveInterpreter.flatpak
 #
 #   scripts/flatpak.sh              # build, install --user, write the bundle
 #   scripts/flatpak.sh --no-bundle  # build and install only

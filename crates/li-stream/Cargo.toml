@@ -1,6 +1,6 @@
 [package]
 name = "li-stream"
-description = "Commit policy and dual-lane merge (PLAN §12)"
+description = "Commit policy and dual-lane merge"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

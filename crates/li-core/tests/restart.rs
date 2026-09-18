@@ -1,4 +1,4 @@
-//! Starting the engine again after stopping it (PLAN §17 task 1.23).
+//! Starting the engine again after stopping it.
 //!
 //! This is what changing the audio source in the settings window now does:
 //! `stop` and then `start`, because a running pipeline cannot be aimed at a

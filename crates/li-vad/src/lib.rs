@@ -1,6 +1,6 @@
 //! Silero VAD, used as a *gate* and nothing more.
 //!
-//! Phase 0 tried using the VAD to cut utterance boundaries and it mis-cut badly:
+//! The prototype tried using the VAD to cut utterance boundaries and it mis-cut badly:
 //! calling Silero per window resets its internal state. So it answers two
 //! questions only — is there speech right now (skip ASR on silence, which also
 //! stops Whisper hallucinating on music), and how long has the trailing silence

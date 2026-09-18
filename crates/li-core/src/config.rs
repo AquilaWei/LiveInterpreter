@@ -1,8 +1,8 @@
-//! `config.toml` (PLAN §14).
+//! `config.toml`.
 //!
 //! Read from `~/.config/liveinterpreter/config.toml`. A missing file is not an
-//! error -- it means the defaults, which are the settings every task from 1.4
-//! to 1.7 measured and locked. A malformed one *is* an error, named and
+//! error -- it means the defaults, which are the settings that were measured
+//! and locked. A malformed one *is* an error, named and
 //! refused at startup rather than silently half-applied.
 
 use std::path::PathBuf;
@@ -26,7 +26,7 @@ pub struct EngineConfig {
     pub hotkeys: HotkeyCfg,
 }
 
-/// Global hotkeys (PLAN §17 task 1.10).
+/// Global hotkeys.
 ///
 /// Global because the two that matter are unreachable otherwise. A bar with
 /// click-through on receives no clicks, so nothing on it can turn click-through
@@ -54,13 +54,13 @@ impl Default for HotkeyCfg {
     }
 }
 
-/// The floating bar's appearance and placement (PLAN §14 `[ui]`, task 1.9).
+/// The floating bar's appearance and placement.
 ///
 /// Here rather than in `li-desktop` because it belongs in the one config file
-/// the settings window of task 1.10 writes, and because Phase 2's Android bar
+/// the settings window writes, and because an Android bar
 /// needs the same numbers.
 ///
-/// **`max_lines` is not here.** PLAN §14 had one integer for both lines, and it
+/// **`max_lines` is not here.** The first schema had one integer for both lines, and it
 /// cannot say the thing that matters: the two lines want different limits. The
 /// source is context and may be clipped -- the transcript file has all of it --
 /// while the translation is the product and must not be. So there is a row
@@ -72,7 +72,7 @@ pub struct UiCfg {
     pub font_size: f64,
     pub opacity: f64,
     pub position: BarPosition,
-    /// Bar width as a percentage of the monitor's width (PLAN §13.1: 80%).
+    /// Bar width as a percentage of the monitor's width (default 80%).
     pub width_pct: f64,
     /// Gap between the bar and the screen edge it is anchored to, in logical
     /// pixels. Zero puts it under a panel or a taskbar on most desktops.
@@ -81,8 +81,8 @@ pub struct UiCfg {
     /// `StreamConfig::max_words` in the worst case, which no single row holds.
     pub source_rows: usize,
     pub target_rows: usize,
-    /// Shortest time a line stays on the bar before a newer one may take it
-    /// (PLAN §12.2). One fast-lane endpoint can close several lines at once,
+    /// Shortest time a line stays on the bar before a newer one may take it.
+    /// One fast-lane endpoint can close several lines at once,
     /// and without this they flash past unread.
     pub min_dwell_ms: u64,
     pub show_source: bool,
@@ -137,9 +137,9 @@ pub struct AudioCfg {
     pub source: DeviceSelector,
 }
 
-/// Both lanes are optional, but at least one must be present (PLAN §8.2).
+/// Both lanes are optional, but at least one must be present.
 /// Turning the accurate lane off is the no-GPU and phone power-saving mode;
-/// turning the fast lane off falls back to Phase 0 behaviour at ~2 s latency.
+/// turning the fast lane off falls back to single-lane behaviour at ~2 s latency.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AsrCfg {
@@ -152,7 +152,7 @@ pub struct AsrCfg {
     /// **It is not a latency knob**, however much it looks like one. All the
     /// pieces of one utterance are emitted at its endpoint, in the same
     /// instant, so cutting a long line makes more lines rather than earlier
-    /// ones. Measured on `read_clean.wav` (task 1.21), 40 -> 12 words took the
+    /// ones. Measured on `read_clean.wav`, 40 -> 12 words took the
     /// transcript from 10 lines to 24 and the translation row's mean gap from
     /// 3.81 s to 2.19 s -- and left **the longest gap at 10.4 s and the number
     /// of gaps over 5 s at 8, both unchanged**, because what the reader waits
@@ -175,11 +175,11 @@ fn max_line_words() -> usize {
 pub struct LaneCfg {
     pub backend: String,
     pub model: String,
-    /// `auto` | `cpu` | `vulkan` | `cuda` | `sycl` | `hip` (PLAN §8.1).
+    /// `auto` | `cpu` | `vulkan` | `cuda` | `sycl` | `hip`.
     ///
     /// Typed rather than a string so a misspelling is a startup error naming
     /// the valid values, not a setting that is silently ignored. Note `sycl`
-    /// where §8.1 said `openvino`: `whisper-rs` exposes no OpenVINO backend,
+    /// where the first plan said `openvino`: `whisper-rs` exposes no OpenVINO backend,
     /// and OpenVINO only ever accelerated whisper's encoder anyway.
     #[serde(default)]
     pub device: DeviceRequest,
@@ -187,8 +187,8 @@ pub struct LaneCfg {
     /// 2 for the fast lane, and everything but two cores for the accurate one.
     #[serde(default)]
     pub threads: usize,
-    /// Seconds to wait for this lane before promoting the fast lane's text
-    /// (PLAN §12.2). Read from `[asr.accurate]`; meaningless on `[asr.fast]`,
+    /// Seconds to wait for this lane before promoting the fast lane's text.
+    /// Read from `[asr.accurate]`; meaningless on `[asr.fast]`,
     /// which is the lane being promoted.
     #[serde(default = "promote_after_s")]
     pub promote_after_s: f64,
@@ -208,7 +208,7 @@ pub struct LaneCfg {
     ///
     /// A shorter wait cuts a sentence at every hesitation, and the accurate
     /// lane then gets short, badly-bounded utterances -- which is the condition
-    /// tasks 1.0c and 1.4 measured whisper condensing and repeating itself in.
+    /// measurements caught whisper condensing and repeating itself in.
     /// 0.25 s buys 377 ms of translation latency for **twice** the word error
     /// rate, and only 0.60 keeps G2a's ≤15%. So the default stays where it is,
     /// and this is a knob for someone who has read the table.
@@ -225,14 +225,14 @@ pub struct LaneCfg {
     /// [`li_asr::DEFAULT_MAX_UTTERANCE_S`] for the sweep behind the 12.
     #[serde(default = "max_utterance_s")]
     pub max_utterance_s: f32,
-    /// Restore punctuation and casing on this lane's text (task 1.25).
+    /// Restore punctuation and casing on this lane's text.
     /// Read from `[asr.fast]`; the accurate lane's model writes its own.
     ///
-    /// The fast lane emits neither, and that costs more than looks: task 1.22
+    /// The fast lane emits neither, and that costs more than looks: it was measured that
     /// measured that `li_mt::chunk::split` decides whether to cut a line by
     /// whether the line has any mark at all, so an unpunctuated 40-word line
     /// went into NLLB whole and came back as its first clause. Real marks turn
-    /// that blind width cut off by themselves. The casing replaces task 1.21's
+    /// that blind width cut off by themselves. The casing replaces the earlier
     /// `readable()` stopgap, which could only capitalise the first letter
     /// because there was no other information to go on.
     ///
@@ -248,9 +248,9 @@ pub struct LaneCfg {
     #[serde(default = "punct_model")]
     pub punct_model: String,
     /// End a line where the restored punctuation says a sentence ended, instead
-    /// of waiting for the endpoint detector (task 1.25, stage 2).
+    /// of waiting for the endpoint detector.
     ///
-    /// **Default off.** This is the one part of task 1.25 that moves a line
+    /// **Default off.** This is the one part of punctuation restoration that moves a line
     /// *boundary*, and moving a boundary is not free: the accurate lane answers
     /// one whole utterance at a time, so its single answer then has to be
     /// sliced across the lines by timestamp, which `li_stream` measured at
@@ -260,7 +260,7 @@ pub struct LaneCfg {
     /// speaking across it -- but that is a hypothesis, and the switch stays off
     /// until it is measured on the user's own audio.
     ///
-    /// What it buys, from task 1.25's E2: where speech runs on without pauses,
+    /// What it buys, measured: where speech runs on without pauses,
     /// a restored full stop is stable a median 3.52 s (p90 6.72 s) before the
     /// line it sits in closes. Where the endpoint detector is already cutting
     /// well there are no mid-line boundaries at all, so this does nothing --
@@ -293,7 +293,7 @@ impl EngineConfig {
     /// The line-breaking and promotion rules, from the file rather than from
     /// [`StreamConfig::default`].
     ///
-    /// Until task 1.21 the engine built `StreamConfig::default()` and nothing
+    /// Originally the engine built `StreamConfig::default()` and nothing
     /// else, so `[asr.accurate] promote_after_s` parsed, validated, round-
     /// tripped through the settings window -- and did nothing at all. A setting
     /// that is read but never applied is worse than one that does not exist.
@@ -310,7 +310,7 @@ impl EngineConfig {
                 .map_or(d.promote_after_s, |a| a.promote_after_s),
             // One number, two places that must agree: `li-stream` decides when
             // a line is finished, sherpa decides when a sentence is. They are
-            // the same 0.6 s (PLAN §12.3), and letting them drift would put a
+            // the same 0.6 s, and letting them drift would put a
             // line boundary where no endpoint is.
             pause_flush_s: self
                 .asr
@@ -333,12 +333,11 @@ pub struct MtCfg {
     pub model: String,
     pub target: String,
     /// Only a cloud/LLM backend can use these; the local NLLB is measurably
-    /// harmed by them and ignores the setting (task 1.6, PLAN §12.4).
+    /// harmed by them and ignores the setting.
     pub context_sentences: usize,
     /// OpenCC config, applied when the backend does not promise Taiwan usage.
     pub opencc: String,
-    /// The four settings task 1.6 measured and locked. See
-    /// `docs/phase1/TASK_1_6_FINDINGS.md`.
+    /// The four settings that were measured and locked.
     pub beam_size: usize,
     /// Cut a line into clauses above this many words before translating.
     /// `0` disables splitting, which is how a third of the lines end up
@@ -347,7 +346,6 @@ pub struct MtCfg {
     /// Cut a stretch with no punctuation at all into equal parts of at most
     /// this many words. `0` leaves it whole, which is what the fast lane --
     /// which punctuates nothing -- was getting: 40 words in, one clause back.
-    /// Task 1.22.
     pub max_run_words: usize,
     pub trim_final_stop: bool,
     /// `0` means 4, which is what measured fastest -- 8 is slower, because the
@@ -357,8 +355,8 @@ pub struct MtCfg {
     /// and start translating it before the sentence has even closed.
     ///
     /// Two measured steps, on `ami_meeting.wav`. Drafting from the fast lane's
-    /// endpoint (task 1.17) put the Chinese on the bar at 1052 ms instead of
-    /// 1468. Then task 1.20: the fast lane stops changing its mind 631-647 ms
+    /// endpoint put the Chinese on the bar at 1052 ms instead of
+    /// 1468. Then: the fast lane stops changing its mind 631-647 ms
     /// before the line closes -- the words are done, and what is left is
     /// `endpoint_silence_s` counting out the quiet -- so NLLB is handed the
     /// sentence during that silence rather than after it. The draft now lands
@@ -377,7 +375,7 @@ pub struct MtCfg {
     ///
     /// `draft_from_fast_lane` is early by the length of one endpoint: it hands
     /// NLLB the sentence while `endpoint_silence_s` counts out the quiet. That
-    /// only helps a speaker who pauses. Task 1.25's E2 measured what happens to
+    /// only helps a speaker who pauses. It was measured what happens to
     /// one who does not: on a clip at 1.5x speed the fast lane's own restored
     /// full stop is stable a **median 3.52 s, p90 6.72 s** before the line it
     /// sits in closes, and on the user's own recording 1.92 s. That wait is the
@@ -500,11 +498,11 @@ impl EngineConfig {
 
     /// Write the settings back, keeping whatever else the file said.
     ///
-    /// PLAN §14 chose TOML so the file would be readable and editable by hand,
-    /// and the settings window of task 1.10 now writes the same file. A writer
+    /// TOML was chosen so the file would be readable and editable by hand,
+    /// and the settings window now writes the same file. A writer
     /// that serialised the struct and truncated would delete every comment in
     /// it the first time someone moved a slider, and would delete the
-    /// `[asr.cloud]` key somebody filled in ahead of task 1.12 -- this program
+    /// `[asr.cloud]` key somebody filled in ahead of time -- this program
     /// does not read that section yet, which is not a reason to destroy it.
     ///
     /// So the existing document is edited in place: a value that has not
@@ -577,7 +575,7 @@ impl LaneCfg {
     }
 }
 
-/// What each lane was measured with (tasks 1.4, 1.5).
+/// What each lane was measured with.
 ///
 /// The fast lane is a small streaming model and gains nothing above two
 /// threads; the accurate one gets the rest of the machine minus two, so the
@@ -632,7 +630,7 @@ mod tests {
     #[test]
     fn the_transcript_section_is_the_writers_own_config() {
         // `li-transcript` owns it, so a format that does not exist is a startup
-        // error here rather than a file that never appears (PLAN §2.6).
+        // error here rather than a file that never appears.
         let cfg: EngineConfig =
             toml::from_str("[transcript]\nformats = [\"srt\", \"vtt\"]\n").unwrap();
         assert_eq!(
@@ -689,7 +687,7 @@ mod tests {
     #[test]
     fn saving_keeps_the_comments_and_the_sections_this_program_does_not_read() {
         // What this prevents: someone writes their notes and their Deepgram key
-        // into config.toml (PLAN §14 lists `[asr.cloud]`, which task 1.12 has
+        // into config.toml (the schema reserves `[asr.cloud]`, which nothing has
         // not built yet), then moves the opacity slider, and both are gone.
         let path = scratch("handwritten").join("config.toml");
         std::fs::write(
@@ -826,7 +824,7 @@ mod tests {
         .unwrap();
         let fast = cfg.asr.fast.as_ref().expect("the file names a fast lane");
         assert_eq!(fast.max_utterance_s, 7.5);
-        // The default is the number task 1.24 measured, not sherpa's own 20:
+        // The default is the measured number, not sherpa's own 20:
         // 20 is where a 1.5x-speed clip spent a fifth of itself in one line
         // that the accurate lane then timed out on.
         let d: EngineConfig =
@@ -846,7 +844,7 @@ mod tests {
     fn the_line_breaking_rules_come_from_the_file_now() {
         // All three of these parsed and were then thrown away: the engine built
         // `StreamConfig::default()`. `promote_after_s` had been round-tripping
-        // through the settings window doing nothing since task 1.8.
+        // through the settings window doing nothing since the engine was first assembled.
         let cfg: EngineConfig = toml::from_str(
             r#"
             [asr]

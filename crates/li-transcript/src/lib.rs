@@ -1,4 +1,4 @@
-//! Transcript writers (PLAN §2.6).
+//! Transcript writers.
 //!
 //! The pre-translation source transcript is a hard requirement of this project,
 //! and it goes to its **own file**, separate from any bilingual output: it is
@@ -28,7 +28,7 @@
 //! Only the `.jsonl` and the bilingual file carry translations, and the
 //! bilingual file is off by default.
 //!
-//! **The text is the accurate lane's** (PLAN §12.2). The fast lane has no
+//! **The text is the accurate lane's**. The fast lane has no
 //! punctuation or capitalisation and a materially higher error rate; it reaches
 //! the screen and nothing else, unless the 8 s promotion rule fires -- and then
 //! `lane` and `reason` in the `.jsonl` say so, which is the whole reason those
@@ -72,7 +72,7 @@ impl std::fmt::Display for Format {
     }
 }
 
-/// `[transcript]` in `config.toml` (PLAN §14).
+/// `[transcript]` in `config.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TranscriptConfig {
@@ -80,7 +80,7 @@ pub struct TranscriptConfig {
     /// A leading `~` is expanded; the directory is created if it is missing.
     pub dir: std::path::PathBuf,
     pub formats: Vec<Format>,
-    /// The source transcript always gets its own file (§2.6); this adds a
+    /// The source transcript always gets its own file; this adds a
     /// second, bilingual one beside it.
     pub bilingual_file: bool,
 }
@@ -118,7 +118,7 @@ impl Default for Langs {
 /// Where finalised lines go.
 ///
 /// A trait because Android writes through the Storage Access Framework rather
-/// than to a path (§2.6), and because `li-core`'s tests need a sink that keeps
+/// than to a path, and because `li-core`'s tests need a sink that keeps
 /// its lines in memory.
 pub trait TranscriptSink: Send {
     /// Accurate-lane text, or fast-lane text that was promoted. Called once per

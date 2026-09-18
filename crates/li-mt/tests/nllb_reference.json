@@ -1,5 +1,5 @@
 {
- "generated_by": "poc/liveinterpreter_poc/mt.py via $CLAUDE_JOB_DIR/tmp/make_ref.py (task 1.6)",
+ "generated_by": "the Python prototype's mt.py",
  "repo_id": "JustFrederik/nllb-200-distilled-600M-ct2-int8",
  "compute_type": "int8",
  "beam_size": 1,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the bundle on a machine that has never seen it (task 1.14b's last gate).
+# Install the bundle on a machine that has never seen it.
 #
 #   scripts/flatpak-test.sh              # the real bundle
 #   scripts/flatpak-test.sh --control    # a bundle built WITHOUT --runtime-repo,

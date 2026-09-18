@@ -1,6 +1,6 @@
 [package]
 name = "li-asr"
-description = "Pluggable ASR backends, fast and accurate lane (PLAN §8.2)"
+description = "Pluggable ASR backends, fast and accurate lane"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,14 +10,14 @@ repository.workspace = true
 [features]
 # Both lanes on by default: a build with no recogniser in it is not a build of
 # this program. The GPU backends are the opposite -- opt in, because each one
-# adds a build-time dependency the plain build does not need (PLAN §8.1).
+# adds a build-time dependency the plain build does not need.
 default = ["sherpa", "whispercpp"]
 sherpa = ["dep:sherpa-rs-sys"]
 whispercpp = ["dep:whisper-rs", "dep:whisper-rs-sys"]
 # Routed through -sys, not through whisper-rs: see the note in the workspace
 # manifest. Each of these makes whisper.cpp's cmake build pull in that backend,
 # so each adds build-time dependencies -- Vulkan needs SPIRV-Headers and glslc,
-# which is why none of them is on by default (task 1.0b).
+# which is why none of them is on by default.
 gpu-vulkan = ["whisper-rs-sys?/vulkan"]
 gpu-cuda = ["whisper-rs-sys?/cuda"]
 gpu-sycl = ["whisper-rs-sys?/intel-sycl"]

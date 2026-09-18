@@ -3,7 +3,7 @@
 //! Capture devices hand us 44.1 or 48 kHz stereo; every model downstream wants
 //! 16 kHz mono. Dropping samples to get there aliases everything above 8 kHz
 //! back down into the speech band, so the rate change is preceded by a low-pass
-//! filter. The Phase 0 PoC skipped this because `parec` resampled for us.
+//! filter. The Python prototype skipped this because `parec` resampled for us.
 //!
 //! State is carried across calls -- filter history and the fractional read
 //! position -- so a stream split into arbitrary chunks gives the same result as

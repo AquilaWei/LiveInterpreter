@@ -2,8 +2,8 @@
 //!
 //! The fast lane emits neither. Until now the only thing that knew where a
 //! sentence ended was sherpa's endpoint detector, which knows it by *listening*
-//! — and a speaker going fast enough leaves no silence to listen to. Task 1.24
-//! measured both cheap ways of listening harder and closed them: the VAD sees a
+//! — and a speaker going fast enough leaves no silence to listen to. Measurement
+//! tried both cheap ways of listening harder and closed them: the VAD sees a
 //! strict subset of what sherpa's own counter sees, and dropping
 //! `endpoint_silence_s` to 0.45 costs `ami_meeting.wav` 7 points of content WER.
 //!
@@ -77,7 +77,7 @@ impl OnlinePunct {
         if !dir.is_dir() {
             bail!(
                 "punctuation model directory not found: {}\n\
-                 Fetch sherpa-onnx-online-punct-en-2024-08-06 (PLAN §15) or turn \
+                 Fetch sherpa-onnx-online-punct-en-2024-08-06 or turn \
                  `[asr.fast] punctuation` off.",
                 dir.display()
             );

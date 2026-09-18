@@ -15,10 +15,10 @@ jobs:
       # things a real build needs are left out on purpose:
       #
       # - `--no-default-features` drops the apps' `gpu-vulkan` and `mt-dnnl`.
-      #   Vulkan needs SPIRV-Headers, which no distro packages (task 1.0b),
+      #   Vulkan needs SPIRV-Headers, which no distro packages,
       #   and CI has no GPU to run it on anyway -- `li-asr::device` is written
       #   so the selection policy is testable without one. oneDNN is a long
-      #   from-source build with its own lib64 wart (PLAN §19-24) that
+      #   from-source build with its own lib64 wart that
       #   `scripts/build.sh` handles and plain cargo does not.
       # - No models. They are 1 GB and downloaded at runtime; every test that
       #   needs them prints SKIP and passes. The shipped build is checked on a
@@ -42,11 +42,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
       - run: cargo test --workspace --no-default-features
 
-  # Windows is on hold (see PLAN), and this job has never run on a real
+  # Windows is on hold, and this job has never run on a real
   # Windows runner. Commented out rather than deleted so it comes back
   # as written when Windows does.
   #
-  # The Windows half of task 1.11. This machine has no Windows, so the WASAPI
+  # The Windows capture path. This machine has no Windows, so the WASAPI
   # path was written against cpal's source and checked by cross-compiling
   # (`cargo check --target x86_64-pc-windows-msvc`); a runner that is actually
   # Windows is the next step up from that, and the first place `cargo test`

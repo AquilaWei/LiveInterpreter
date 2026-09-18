@@ -1,6 +1,6 @@
 [package]
 name = "li-vad"
-description = "Silero VAD speech gate and pause detection (PLAN §2.2)"
+description = "Silero VAD speech gate and pause detection"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

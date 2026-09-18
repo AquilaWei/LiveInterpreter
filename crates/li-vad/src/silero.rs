@@ -1,7 +1,7 @@
 //! Silero VAD v5 through ONNX Runtime.
 //!
 //! The model is embedded in the binary. At 2 MB it is the one model small
-//! enough to ship (PLAN §15), and embedding it removes the whole class of
+//! enough to ship, and embedding it removes the whole class of
 //! "works here, no model on the user's machine" failures for the component
 //! that decides whether the recogniser runs at all.
 
@@ -60,7 +60,7 @@ impl SileroVad {
 
     fn from_bytes(bytes: &[u8], cfg: GateConfig) -> Result<Self> {
         // One thread: the model is tiny, and the cores matter to the two
-        // recognisers sharing this machine (PLAN §11).
+        // recognisers sharing this machine.
         // `with_intra_threads` hands the builder back inside its error, which
         // makes the error type unusable with `?`; flatten it to a message.
         let mut builder = Session::builder()?

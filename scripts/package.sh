@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build the Linux packages (task 1.14). Output: target/release/bundle/{deb,rpm}/
+# Build the Linux packages. Output: target/release/bundle/{deb,rpm}/
 #
 #   scripts/package.sh
 #
 # Two reasons this exists rather than "just run cargo tauri build":
 #
 #  1. The build needs `scripts/build.sh`'s environment (SPIRV-Headers prefix,
-#     and the oneDNN lib64 retry -- PLAN §19-24). Bare cargo does not have it.
+#     and the oneDNN lib64 retry). Bare cargo does not have it.
 #  2. The packages carry the CLI (`liveinterpreter`) as well as the desktop
 #     app, and `cargo tauri build` only builds the desktop crate. The bundler
 #     copies the CLI binary from target/release, so it has to exist first or

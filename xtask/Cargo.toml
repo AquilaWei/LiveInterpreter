@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Build and evaluation tasks (PLAN §16)"
+description = "Build and evaluation tasks"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,7 +26,7 @@ tracing-subscriber = { workspace = true }
 [features]
 # Passed through so `cargo xtask eval` can measure the accurate lane on the GPU
 # it will actually ship on. Never on by default: a Vulkan build needs
-# SPIRV-Headers, which Fedora has no package for (task 1.0b).
+# SPIRV-Headers, which Fedora has no package for.
 # Passed through so `xtask mt` can measure the MT backend both ways.
 mt-dnnl = ["li-mt/dnnl"]
 gpu-vulkan = ["li-asr/gpu-vulkan"]

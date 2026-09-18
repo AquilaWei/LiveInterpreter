@@ -1,6 +1,6 @@
-//! Subtitle-oriented ASR metrics (PLAN §16).
+//! Subtitle-oriented ASR metrics.
 //!
-//! A Rust port of `poc/liveinterpreter_poc/metrics.py`, which is the definition
+//! A Rust port of the Python prototype's `metrics.py`, which is the definition
 //! of record for gates G2a and G2b; the two must agree, so the tokeniser and
 //! the alignment are ported behaviour-for-behaviour rather than rewritten.
 //!
@@ -204,7 +204,7 @@ pub(crate) fn align(r: &[String], h: &[String]) -> Vec<(Op, usize)> {
 
 #[derive(Debug, Clone)]
 pub struct Metrics {
-    /// Plain WER, for continuity with the Phase 0 and task 1.0 reports.
+    /// Plain WER, for continuity with the earliest reports.
     pub wer: f64,
     /// Gate G2a.
     pub content_wer: f64,
@@ -344,7 +344,7 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// chrF -- the MT metric (PLAN §16)
+// chrF -- the MT metric
 // ---------------------------------------------------------------------------
 
 /// Character n-gram F-score, as sacrebleu computes it with default settings:

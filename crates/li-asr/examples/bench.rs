@@ -1,4 +1,4 @@
-//! Measure one lane against a wav file, the way task 1.0a/1.0b measured the
+//! Measure one lane against a wav file, the way the engines were first measured -- the
 //! Python PoC, so the Rust numbers can be compared to them directly.
 //!
 //!     cargo run --release -p li-asr --example bench -- \
@@ -8,14 +8,14 @@
 //!
 //! The audio is streamed at playback speed and the source never slows down for
 //! a slow consumer, so "wall time vs clip length" is a real answer to "does it
-//! keep up". Latency is measured the way PLAN §7 defines it: from the moment
+//! keep up". Latency is measured from the moment
 //! the sentence's audio has finished to the moment its text exists.
 //!
 //! The accurate lane needs a buffer discipline before it can be measured at
-//! all, and that discipline is `li-stream`'s job (task 1.5). What runs here is
+//! all, and that discipline is `li-stream`'s job. What runs here is
 //! the minimum that makes the engine measurable -- VAD-driven flush at a pause,
 //! a hard cap on the buffer -- and it reports the mean buffer length, because
-//! that is the quantity task 1.0b found to be the difference between working
+//! that is the quantity found to be the difference between working
 //! and collapsing.
 
 use std::{
@@ -31,7 +31,7 @@ use li_types::AsrEvent;
 use li_vad::{GateConfig, SileroVad, Vad, VadEvent};
 
 const SAMPLE_RATE: f64 = 16_000.0;
-/// PLAN §12 defaults. Duplicated rather than imported: `li-stream` owns the
+/// The streaming defaults. Duplicated rather than imported: `li-stream` owns the
 /// policy, and this file is a measuring stick, not a second implementation.
 const TICK: Duration = Duration::from_millis(800);
 const PAUSE_FLUSH: Duration = Duration::from_millis(600);
@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| default_model(&args.lane));
 
-    // The fast lane is budgeted at about one core (§8); the accurate lane gets
+    // The fast lane is budgeted at about one core; the accurate lane gets
     // what is left, because it is the one that has to keep up with the clock.
     let threads = args.threads.unwrap_or(match args.lane.as_str() {
         "fast" => 2,
@@ -228,10 +228,10 @@ async fn main() -> Result<()> {
                 // Restart the clock *after* the pass, not before it. Starting it
                 // before means a pass that overruns the tick re-triggers on the
                 // very next frame and the lane runs flat out -- the positive
-                // feedback loop task 1.0b diagnosed in the Phase 0 PoC, faithfully
+                // feedback loop that sank the Python prototype, faithfully
                 // reproduced by this file on its first run. Backing off properly
                 // (shrinking the buffer, stretching the tick) is `li-stream`'s
-                // job in task 1.5; this only stops the measuring stick bending.
+                // job; this only stops the measuring stick bending.
                 last_tick = Instant::now();
             }
             if flush {
@@ -300,7 +300,7 @@ async fn main() -> Result<()> {
         let mean = buf_lengths.iter().sum::<f64>() / buf_lengths.len() as f64;
         let max = buf_lengths.iter().copied().fold(0.0, f64::max);
         out.push_str(&format!(
-            "- rolling buffer: **mean {mean:.1}s** (PLAN §12 requires <= 6s), max {max:.1}s\n"
+            "- rolling buffer: **mean {mean:.1}s** (must stay <= 6s), max {max:.1}s\n"
         ));
     }
     out.push_str(&format!(

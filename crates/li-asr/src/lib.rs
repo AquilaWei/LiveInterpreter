@@ -1,11 +1,11 @@
-//! ASR backends for both lanes (PLAN §8.2).
+//! ASR backends for both lanes.
 //!
 //! The two lanes exist because one engine cannot hold both acceptance gates.
 //! The fast lane is chunk-based and never re-transcribes, so its latency does
 //! not grow with the buffer — it owns G1 (measured: median 0.68–0.76 s). The
 //! accurate lane transcribes a whole utterance once its endpoint has been seen,
 //! lands about a second behind, and owns G2a — it is worth 5–7 WER points over
-//! the fast lane (task 1.0c), which is what pays for running two engines.
+//! the fast lane, which is what pays for running two engines.
 //!
 //! Note both lanes are `AsrEngine`: the difference is the commit policy in
 //! `li-stream`, not the interface.
@@ -18,11 +18,11 @@
 //!   endpoint detector, and throwing that away would mean re-deriving sentence
 //!   breaks from unpunctuated text.
 //! * **How much audio the accurate lane sees.** The caller owns the buffer.
-//!   Letting the engine grow its own is what broke the Phase 0 PoC (task 1.0b),
-//!   and task 1.5 measured that *where* the buffer starts matters more than how
+//!   Letting the engine grow its own is what broke the Python prototype,
+//!   and it was measured that *where* the buffer starts matters more than how
 //!   long it is: whisper handed a window beginning mid-clause condenses and
 //!   repeats itself. `li_stream::StreamConfig::max_segment_s` is the knob, and
-//!   one endpoint-to-endpoint utterance per pass is the policy (PLAN §12.3).
+//!   one endpoint-to-endpoint utterance per pass is the policy.
 
 use std::{path::PathBuf, time::Duration};
 
@@ -60,7 +60,7 @@ pub trait AsrEngine: Send {
     fn capabilities(&self) -> AsrCaps;
 
     /// What this engine actually loaded and what it ended up running on.
-    /// PLAN §8.1 requires the real backend and device name to reach the status
+    /// The real backend and device name to must reach the status
     /// line, not the value that was asked for: `auto` resolving to CPU on a
     /// machine that was supposed to have a GPU is the failure worth seeing.
     fn backend(&self) -> &BackendInfo;
@@ -87,7 +87,7 @@ pub trait AsrEngine: Send {
     /// has no notion of a sentence still in progress. Only a backend that
     /// segments its own stream can answer.
     ///
-    /// Task 1.25 stage 2 asks this when the punctuation model says a sentence
+    /// The semantic cut asks this when the punctuation model says a sentence
     /// has ended inside a line that is still open. Closing that line needs a
     /// `t_end`, and the two values that are free are both wrong: `now` is the
     /// edge of the audio, which would make every early line report a latency of
@@ -100,9 +100,9 @@ pub trait AsrEngine: Send {
     }
 
     /// Text the next pass should be biased toward: the tail of what has already
-    /// been committed. Phase 0 measured that carrying it improves recognition
+    /// been committed. The prototype measured that carrying it improves recognition
     /// at the start of a buffer, which for a re-transcribing backend is every
-    /// pass (PLAN §12.3). A streaming backend never re-reads its input and
+    /// pass. A streaming backend never re-reads its input and
     /// ignores this.
     fn set_prompt(&mut self, _text: &str) {}
 }
@@ -113,8 +113,8 @@ pub trait AsrEngine: Send {
 /// `ami_meeting.wav`: it is 0.6 of the 0.674 s median that a finished fast-lane
 /// sentence takes to reach the screen, so it is where the latency is.
 ///
-/// Task 1.24 swept it again looking for the same latency the cap above bought,
-/// and 0.45 -- untested by task 1.18, which jumped from 0.60 to 0.35 -- looks
+/// A second sweep went looking for the same latency the cap above bought,
+/// and 0.45 -- untested by the first sweep, which jumped from 0.60 to 0.35 -- looks
 /// free on read speech: `read_clean.wav` and `read_hard.wav` keep their word
 /// error rate exactly. It is not free. On `ami_meeting.wav` it takes content
 /// WER from 14.7% to **21.9%**, past G2a, and the extra 8 passes push a clip
@@ -130,7 +130,7 @@ pub const DEFAULT_ENDPOINT_SILENCE_S: f32 = 0.6;
 /// not where the speaker stopped — so the number is a bound on how bad the
 /// give-up is allowed to be, and nothing else.
 ///
-/// **12 s, measured (task 1.24).** It was 20 until a user reported fast speech
+/// **12 s, measured.** It was 20 until a user reported fast speech
 /// arriving too late to read, and 20 turned out to be where that happens: on
 /// `read_clean.wav` resampled to 1.5x speed, one line ran the full 19.0-39.0 s
 /// and the accurate lane timed out on it, so the bar showed unpunctuated
@@ -167,7 +167,7 @@ pub struct LaneSpec {
     pub language: String,
     /// Trailing silence, in seconds, before the fast lane calls a sentence
     /// finished. Ignored by the accurate lane, whose utterance boundaries come
-    /// from the fast lane's endpoints (PLAN §12.3).
+    /// from the fast lane's endpoints.
     ///
     /// It is the single largest term in G1: a sentence cannot be closed sooner
     /// than this, so 0.6 is 0.6 of the ~0.67 s a finished line takes to reach

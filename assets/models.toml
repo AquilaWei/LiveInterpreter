@@ -1,4 +1,4 @@
-# Model manifest (PLAN §15), and the input to task 1.13's downloader.
+# Model manifest, and the input to the model downloader.
 #
 # Installers ship none of these: the desktop package is ~71 MB and the models
 # are ~1 GB, so they are fetched on first run into the model cache
@@ -25,7 +25,7 @@ dest = "sherpa-onnx-streaming-zipformer-en-2023-06-21"
 base = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/main"
 note = """sherpa-onnx streaming Zipformer, LibriSpeech+GigaSpeech, Apache-2.0 (icefall, via \
 marcoyang/icefall-libri-giga-pruned-transducer-stateless7-streaming-2023-04-04). Do NOT substitute \
-the LibriSpeech-only build: 95% WER on a real meeting (task 1.0a). int8 is what §8 locks in; the \
+the LibriSpeech-only build: 95% WER on a real meeting. int8 is what was measured; the \
 float export in the same repo is not downloaded."""
 files = [
   { name = "encoder-epoch-99-avg-1.int8.onnx", size = 187823992, sha256 = "32c98281c7bd8b63e3e142d007251b37f120572e8fdea9a4f5a79ce22b10ec4f" },
@@ -40,7 +40,7 @@ kind = "accurate"
 dest = "ggml"
 base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 note = """GGML, Apache-2.0 weights (openai/whisper-small.en) in ggerganov's MIT-licensed \
-conversion. Locked by task 1.0b/1.0c: RTF 0.053-0.063 on Vulkan, 2.1x streaming headroom. medium \
+conversion. Measured: RTF 0.053-0.063 on Vulkan, 2.1x streaming headroom. medium \
 is rejected -- it cannot keep up and is not reliably more accurate."""
 files = [
   { name = "ggml-small.en-q5_1.bin", size = 190098681, sha256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30" },
@@ -51,7 +51,7 @@ id = "base.en-q5_1"
 kind = "accurate"
 dest = "ggml"
 base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
-note = """No-GPU fallback, locked by task 1.4: full 30s encoder context on CPU keeps up (work \
+note = """No-GPU fallback, measured: full 30s encoder context on CPU keeps up (work \
 factor 0.571) with a 0.0% drop rate. Do NOT instead run small.en with a shortened audio_ctx to buy \
 the speed -- it makes whisper repeat whole clauses (content WER 15.2% -> 36.1%). Still needs \
 li-stream to hold the mean buffer <= 6s. Fetched only when the accurate lane is configured for \
@@ -65,7 +65,7 @@ id = "nllb-200-distilled-600m-ct2-int8"
 kind = "mt"
 dest = "nllb-200-distilled-600m-ct2-int8"
 base = "https://huggingface.co/JustFrederik/nllb-200-distilled-600M-ct2-int8/resolve/main"
-note = """CTranslate2 int8. Locked by task 1.6: beam 4, source cut into clauses of >6 words, final \
+note = """CTranslate2 int8, measured: beam 4, source cut into clauses of >6 words, final \
 full stop dropped. Do NOT hand it a whole multi-clause line -- it translates one clause and \
 silently drops the rest (33% of lines). It also cannot use context: given the previous sentence it \
 translates *that* instead.
@@ -93,7 +93,7 @@ dest = "."
 archive = "tar.bz2"
 provides = "sherpa-onnx-online-punct-en-2024-08-06/model.int8.onnx"
 note = """CNN-BiLSTM (Edge-Punct-Casing, Apache-2.0), English. Punctuation AND casing for the fast \
-lane, which emits neither. Task 1.25: p90 4.9-8.6 ms a call, and on the user's own transcripts it \
+lane, which emits neither. Measured: p90 4.9-8.6 ms a call, and on real meeting transcripts it \
 recovers 48 of 83 swallowed sentence boundaries at 0.84 precision. OPTIONAL -- missing means \
 punct: None and today's behaviour exactly, unlike the two ASR lanes, which fail startup. Feed it \
 LOWER CASE: sherpa's DecodeSentences only ever calls toupper, so all-caps in is all-caps out.

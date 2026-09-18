@@ -1,6 +1,6 @@
 # A machine that has never seen LiveInterpreter, flatpak remotes, or a CJK font.
 # Debian rather than Fedora on purpose: "a different distribution" is the thing
-# the flatpak exists to prove, and the host here is Fedora 43.
+# the flatpak exists to prove, and the host here is Fedora 44.
 FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
