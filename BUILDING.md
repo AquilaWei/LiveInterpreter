@@ -246,6 +246,16 @@ scripts/build.sh clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-Some tests need the models and are skipped without them. `cargo xtask eval
+Some tests need the models and are skipped without them -- except
+`crates/li-core/tests/restart.rs`, which panics instead ("is not in the model
+cache"). If the only models on the machine are the Flatpak's, point the tests
+at them rather than downloading a second gigabyte:
+
+```bash
+LI_MODEL_DIR=~/.var/app/io.github.AquilaWei.LiveInterpreter/cache/liveinterpreter/models \
+    scripts/build.sh test --workspace
+```
+
+That is how 1.3.0's 302 were run. `cargo xtask eval
 --wav testdata/ami_meeting.wav` runs the acceptance harness of PLAN §16, and
 `--transcript DIR` makes it write real transcript files while it does.
