@@ -498,6 +498,25 @@ impl Engine {
         &self.cfg
     }
 
+    /// Replace the config the next [`Engine::start`] reads.
+    ///
+    /// Only between sessions: a running pipeline has already opened its
+    /// device and loaded its models, and cannot take a new config
+    /// halfway through, so this fails while the engine is running. `stop`,
+    /// then this, then `start`.
+    ///
+    /// Without it the engine kept the config it was created with forever,
+    /// and restarting it to switch the audio source reopened the old source:
+    /// a settings window switched to the microphone went on transcribing the
+    /// speakers until the program was restarted.
+    pub fn set_config(&mut self, cfg: EngineConfig) -> Result<()> {
+        if self.is_running() {
+            bail!("the engine is running; stop it before changing its config");
+        }
+        self.cfg = cfg;
+        Ok(())
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<EngineEvent> {
         self.events.subscribe()
     }
@@ -1983,6 +2002,20 @@ mod tests {
         assert!(!worth_translating("   "));
         assert!(worth_translating("Okay, this is our agenda."));
         assert!(worth_translating("Hello everybody."));
+    }
+
+    #[test]
+    fn a_stopped_engine_takes_a_new_config() {
+        let mut engine = Engine::new(EngineConfig::default()).unwrap();
+        let mut cfg = EngineConfig::default();
+        cfg.audio.source = li_types::DeviceSelector::Microphone;
+
+        engine.set_config(cfg).unwrap();
+
+        assert_eq!(
+            engine.config().audio.source,
+            li_types::DeviceSelector::Microphone
+        );
     }
 
     #[test]
