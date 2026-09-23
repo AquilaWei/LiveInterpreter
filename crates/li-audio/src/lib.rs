@@ -6,6 +6,7 @@
 //! quietly fails -- see [`agc`] and [`resample`].
 
 pub mod agc;
+pub mod decode;
 pub mod device;
 pub mod file;
 #[cfg(target_os = "linux")]

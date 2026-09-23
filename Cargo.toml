@@ -24,6 +24,11 @@ li-core = { path = "crates/li-core" }
 anyhow = "1"
 cpal = "0.16"
 hound = "3"
+# Decoding for file transcription: mp3, m4a/AAC, flac, ogg/vorbis and wav in
+# pure Rust, so neither the Flatpak nor the rpm has to carry ffmpeg.
+symphonia = { version = "0.6.1", default-features = false, features = [
+    "opt-simd", "aac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav",
+] }
 # ONNX Runtime for Silero VAD. rustls rather than the default native-tls:
 # the download is a build-time fetch of the runtime, and making every
 # build machine carry OpenSSL headers for it is not a trade worth making.

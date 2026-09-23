@@ -15,6 +15,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 cpal = { workspace = true }
 hound = { workspace = true }
+symphonia = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libpulse-binding = { workspace = true }
