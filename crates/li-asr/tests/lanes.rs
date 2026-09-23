@@ -310,3 +310,25 @@ fn punctuation_restores_marks_and_casing_without_moving_the_words() {
             .join(" ")
     );
 }
+
+/// What this prevents: a segfault. Two whisper models loading onto Vulkan at
+/// the same moment crashed inside `ggml_backend_alloc_ctx_tensors_from_buft`,
+/// which called a null function pointer -- the Vulkan backend's
+/// initialisation is not thread-safe. Found by the file transcriber's tests,
+/// which load one whisper each and run in parallel. On a CPU build this
+/// passes either way; the crash needs `--features gpu-vulkan`.
+#[test]
+fn four_accurate_lanes_can_load_at_the_same_time() {
+    let Some(m) = accurate_model() else { return };
+
+    let loads: Vec<_> = (0..4)
+        .map(|_| {
+            let m = m.clone();
+            std::thread::spawn(move || li_asr::build(&LaneSpec::new("whispercpp", m)).is_ok())
+        })
+        .collect();
+
+    for l in loads {
+        assert!(l.join().unwrap(), "a load failed");
+    }
+}

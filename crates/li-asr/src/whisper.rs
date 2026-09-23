@@ -156,9 +156,22 @@ impl WhisperAccurate {
         let mut params = WhisperContextParameters::default();
         params.use_gpu(selection.accel != Accel::Cpu);
         params.gpu_device(selection.gpu_index);
-        let ctx = WhisperContext::new_with_params(path, params)
-            .with_context(|| format!("loading {}", path.display()))?;
-        let state = ctx.create_state().context("creating a whisper state")?;
+        let (ctx, state) = {
+            // One load at a time, process-wide. Two models loading onto Vulkan
+            // at once segfault inside ggml (`ggml_backend_alloc_ctx_tensors_from_buft`
+            // calls a null function pointer): the backend's initialisation is
+            // not thread-safe. Measured 3 crashes in 3 runs with four loads in
+            // parallel; see `four_accurate_lanes_can_load_at_the_same_time`.
+            // Loads take seconds and almost never overlap, so the wait is free.
+            static LOAD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            // A load that panicked leaves nothing behind that the next one
+            // depends on, so a poisoned lock is still a usable one.
+            let _one = LOAD.lock().unwrap_or_else(|e| e.into_inner());
+            let ctx = WhisperContext::new_with_params(path, params)
+                .with_context(|| format!("loading {}", path.display()))?;
+            let state = ctx.create_state().context("creating a whisper state")?;
+            (ctx, state)
+        };
 
         let info = BackendInfo {
             engine: "whisper.cpp",
