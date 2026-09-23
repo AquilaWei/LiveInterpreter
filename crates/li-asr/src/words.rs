@@ -69,9 +69,57 @@ pub fn merge(pieces: &[(String, Duration)], t_end: Duration) -> Vec<Word> {
     words
 }
 
-/// Join words back into a line. Both engines are fed one language at a time and
-/// neither emits a script that is written without spaces, so this is a join,
-/// not a detokeniser.
+/// Turn tokens' raw bytes into text pieces, joining the tokens that split a
+/// character between them.
+///
+/// whisper's byte-level BPE cuts wherever it likes, including through the
+/// middle of a multi-byte UTF-8 character: a Chinese character is often the
+/// tail of one token and the head of the next. Decoding each token on its own
+/// turns both halves into U+FFFD, which is how an English model that heard
+/// Chinese filled a transcript with "��是����" (2026-09-23). Bytes are held
+/// back until they form whole characters, and the piece takes the start of
+/// its first token.
+///
+/// Bytes that are not UTF-8 at all, or a character still cut off at the end,
+/// come out as U+FFFD rather than being dropped: what whisper wrote stays on
+/// the record, damaged or not.
+pub fn decode_pieces(tokens: &[(Vec<u8>, Duration)]) -> Vec<(String, Duration)> {
+    let mut out = Vec::new();
+    let mut held: Vec<u8> = Vec::new();
+    let mut held_start = Duration::ZERO;
+    for (bytes, start) in tokens {
+        if held.is_empty() {
+            held_start = *start;
+        }
+        held.extend_from_slice(bytes);
+        loop {
+            let (take, done) = match std::str::from_utf8(&held) {
+                Ok(_) => (held.len(), true),
+                // A character cut off at the end: the next token finishes it.
+                Err(e) if e.error_len().is_none() => (e.valid_up_to(), true),
+                // Not UTF-8: out it goes as far as the bad bytes, and the rest
+                // -- often a whole token like " ok" -- is looked at again.
+                Err(e) => (e.valid_up_to() + e.error_len().unwrap_or(0), false),
+            };
+            let piece: Vec<u8> = held.drain(..take).collect();
+            out.push((String::from_utf8_lossy(&piece).into_owned(), held_start));
+            held_start = *start;
+            if done || held.is_empty() {
+                break;
+            }
+        }
+    }
+    if !held.is_empty() {
+        out.push((String::from_utf8_lossy(&held).into_owned(), held_start));
+    }
+    out.retain(|(text, _)| !text.is_empty());
+    out
+}
+
+/// Join words back into a line. Both engines are fed one language at a time, so
+/// this is a join, not a detokeniser. An English whisper that hears Chinese
+/// does write it, but with no spaces between characters, so a run of them is
+/// one "word" here and comes out unspaced, as Chinese should.
 pub fn text_of(words: &[Word]) -> String {
     words
         .iter()
@@ -168,6 +216,46 @@ mod tests {
         let w = merge(&pieces(&[("▁END", 100), ("▁", 300)]), ms(400));
         assert_eq!(w.len(), 1);
         assert_eq!(w[0].end, ms(400));
+    }
+
+    fn tokens(v: &[(&[u8], u64)]) -> Vec<(Vec<u8>, Duration)> {
+        v.iter().map(|(b, m)| (b.to_vec(), ms(*m))).collect()
+    }
+
+    #[test]
+    fn a_character_split_between_two_tokens_is_put_back_together() {
+        // "是" is E6 98 AF; whisper gave it as E6 98 | AF.
+        let got = decode_pieces(&tokens(&[(b"\xE6\x98", 100), (b"\xAF", 200)]));
+
+        assert_eq!(got, pieces(&[("是", 100)]));
+    }
+
+    #[test]
+    fn whole_tokens_stay_separate_pieces() {
+        let got = decode_pieces(&tokens(&[(b"Hel", 100), (b"lo", 200), (b" world", 400)]));
+
+        assert_eq!(got, pieces(&[("Hel", 100), ("lo", 200), (" world", 400)]));
+    }
+
+    #[test]
+    fn a_character_cut_off_at_the_end_is_kept_as_a_replacement_mark() {
+        let got = decode_pieces(&tokens(&[(b" ok", 100), (b"\xE6\x98", 200)]));
+
+        assert_eq!(got, pieces(&[(" ok", 100), ("\u{FFFD}", 200)]));
+    }
+
+    #[test]
+    fn an_unfinished_character_does_not_swallow_the_next_word() {
+        let got = decode_pieces(&tokens(&[(b"\xE6\x98", 100), (b" ok", 200)]));
+
+        assert_eq!(got, pieces(&[("\u{FFFD}", 100), (" ok", 200)]));
+    }
+
+    #[test]
+    fn bytes_that_are_not_utf8_do_not_hold_up_the_tokens_after_them() {
+        let got = decode_pieces(&tokens(&[(b"\xFF", 100), (b" ok", 200)]));
+
+        assert_eq!(got, pieces(&[("\u{FFFD}", 100), (" ok", 200)]));
     }
 
     #[test]

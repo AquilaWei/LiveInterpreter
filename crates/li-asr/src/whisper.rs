@@ -256,7 +256,7 @@ impl WhisperAccurate {
     /// underflows to zero and the cap never fires again. It was measured that
     /// as a lane running 12 s behind with a *negative* reported latency.
     fn collect(&self, t_origin: Duration, limit: Duration) -> Result<Vec<li_types::Word>> {
-        let mut pieces: Vec<(String, Duration)> = Vec::new();
+        let mut tokens: Vec<(Vec<u8>, Duration)> = Vec::new();
         let mut t_end = t_origin;
         for seg in self.state.as_iter() {
             if seg.to_str_lossy().is_ok_and(|t| is_annotation(&t)) {
@@ -278,17 +278,16 @@ impl WhisperAccurate {
                 if tok.token_id() >= self.ctx.token_eot() {
                     continue;
                 }
-                let Ok(text) = tok.to_str_lossy() else {
+                // Bytes, not text: a token can end halfway through a
+                // character, and decoding it alone ruins both halves.
+                let Ok(bytes) = tok.to_bytes() else {
                     continue;
                 };
-                if text.is_empty() {
-                    continue;
-                }
                 let start = (t_origin + TIME_UNIT * tok.token_data().t0.max(0) as u32).min(limit);
-                pieces.push((text.into_owned(), start));
+                tokens.push((bytes.to_vec(), start));
             }
         }
-        Ok(words::merge(&pieces, t_end))
+        Ok(words::merge(&words::decode_pieces(&tokens), t_end))
     }
 }
 
