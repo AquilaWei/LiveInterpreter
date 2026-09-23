@@ -42,7 +42,7 @@ pub mod jsonl;
 pub mod render;
 mod writer;
 
-pub use writer::Writer;
+pub use writer::{Writer, expand_home};
 
 /// An output format. Typed rather than a string so `formats = ["sbt"]` is a
 /// startup error naming the four that exist, not a file that never appears.

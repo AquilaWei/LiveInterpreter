@@ -288,8 +288,9 @@ fn tag(s: &str) -> String {
 }
 
 /// `~` is a shell convention, not a filesystem one: `create_dir_all` on a path
-/// starting with it makes a directory literally named `~`.
-fn expand_home(p: &Path) -> PathBuf {
+/// starting with it makes a directory literally named `~`. Public because the
+/// file transcriber writes into the same `[transcript] dir`.
+pub fn expand_home(p: &Path) -> PathBuf {
     let s = p.to_string_lossy();
     let rest = s
         .strip_prefix("~/")
