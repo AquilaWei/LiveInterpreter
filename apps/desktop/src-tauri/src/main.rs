@@ -44,6 +44,7 @@ use std::time::Duration;
 use anyhow::Result;
 use li_audio::AudioSource;
 use li_core::Engine;
+use li_core::batch::{self, Output};
 use li_core::config::{BarPosition, EngineConfig, HotkeyCfg, UiCfg};
 use li_core::download;
 use li_core::models::Models;
@@ -52,17 +53,23 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, Window, WindowEvent,
 };
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tokio::sync::Mutex;
 
 const BAR: &str = "bar";
 const SETTINGS: &str = "settings";
 const DOWNLOAD: &str = "download";
+const TRANSCRIBE: &str = "transcribe";
 
 /// The engine, when there is one. The probe modes run the bar without it.
 struct State {
     engine: Arc<Mutex<Engine>>,
     paused: AtomicBool,
+    /// The cancel flag of the file transcription in progress, if one is. Also
+    /// what says one is in progress: there is only ever one, because two
+    /// would each load their own whisper.
+    transcribing: std::sync::Mutex<Option<Arc<AtomicBool>>>,
 }
 
 /// Everything about the bar that changes while it is open.
@@ -232,6 +239,11 @@ fn reopen_capture(app: &AppHandle) {
     else {
         return;
     };
+    // A file transcription has the engine stopped, and starts it again when
+    // it is done. Starting it here would put a second whisper on the GPU.
+    if transcribing(app) {
+        return;
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut engine = engine.lock().await;
@@ -372,6 +384,159 @@ async fn transcripts(state: tauri::State<'_, State>) -> Result<Vec<String>, Stri
         .iter()
         .map(|p| p.display().to_string())
         .collect())
+}
+
+/// Open the 語音轉檔 window.
+#[tauri::command]
+fn open_transcribe(app: AppHandle) -> Result<(), String> {
+    transcribe_window(&app)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// What the file picker offers. Everything `li_audio::decode` reads; `mp4`
+/// because a video's audio track decodes the same way as an `m4a`.
+const AUDIO_EXTENSIONS: &[&str] = &["mp3", "m4a", "mp4", "aac", "flac", "ogg", "oga", "wav"];
+
+/// Ask for an audio file. `None` when the dialog was dismissed.
+#[tauri::command]
+async fn pick_audio(app: AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("選擇要轉檔的音訊")
+        .add_filter("音訊", AUDIO_EXTENSIONS)
+        .pick_file(move |f| {
+            let _ = tx.send(f);
+        });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    picked
+        .map(|f| f.into_path().map(|p| p.display().to_string()))
+        .transpose()
+        .map_err(|e| e.to_string())
+}
+
+/// Transcribe one file, with the live subtitles stopped while it runs.
+///
+/// Returns the path written, or `None` if it was cancelled. Progress goes to
+/// the transcribe window as `transcribe://progress` events: a long file
+/// takes minutes, and a command answers once.
+///
+/// **Why stop the engine rather than share it.** The live engine's models live
+/// inside its running tasks, and the batch transcriber loads its own; running
+/// both would hold two copies of whisper and NLLB, 1-2 GB more, with both
+/// slowed down by sharing the GPU. Stopping first frees them, and the engine
+/// is started again afterwards whether the transcription worked or not.
+/// The engine lock is not held for the run: a pause hotkey or the transcript
+/// query must not hang for the length of a podcast.
+#[tauri::command]
+async fn transcribe_file(
+    app: AppHandle,
+    path: String,
+    output: Output,
+) -> Result<Option<String>, String> {
+    let (engine, cancel) = {
+        let state = app
+            .try_state::<State>()
+            .ok_or("probe mode has no engine to transcribe with")?;
+        let mut slot = state.transcribing.lock().unwrap();
+        if slot.is_some() {
+            return Err("已經有一個檔案在轉檔中".into());
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        *slot = Some(cancel.clone());
+        (state.engine.clone(), cancel)
+    };
+    // The saved settings, not the engine's copy: the engine holds the config it
+    // was created with.
+    let cfg = shell(&app).lock().unwrap().cfg.clone();
+
+    let was_running = {
+        let mut engine = engine.lock().await;
+        let running = engine.is_running();
+        if running && let Err(e) = engine.stop().await {
+            tracing::warn!("stopping the live engine for a file transcription: {e:#}");
+        }
+        running
+    };
+    if was_running {
+        notice(&app, "語音轉檔中，即時字幕暫停");
+    }
+
+    let progress = app.clone();
+    let result = batch::transcribe(cfg, path.into(), output, cancel, move |p| {
+        let _ = progress.emit_to(TRANSCRIBE, "transcribe://progress", p);
+    })
+    .await;
+
+    if was_running {
+        resume_live(&app, &engine).await;
+    }
+    if let Some(state) = app.try_state::<State>() {
+        *state.transcribing.lock().unwrap() = None;
+    }
+    match result {
+        Ok(written) => Ok(Some(written.display().to_string())),
+        Err(e) if e.is::<batch::Cancelled>() => Ok(None),
+        Err(e) => {
+            tracing::error!("file transcription: {e:#}");
+            Err(format!("{e:#}"))
+        }
+    }
+}
+
+/// Stop the transcription in progress after the sentence in hand.
+#[tauri::command]
+fn cancel_transcribe(state: tauri::State<'_, State>) {
+    if let Some(cancel) = state.transcribing.lock().unwrap().as_ref() {
+        cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Show a finished transcript in the desktop's file manager.
+///
+/// `xdg-open` on the folder rather than on the file: a `.txt` opens in
+/// whatever the desktop picked for text, and the person may well want to send
+/// it somewhere instead. Inside a Flatpak `xdg-open` goes through the OpenURI
+/// portal.
+#[tauri::command]
+fn show_in_folder(path: String) -> Result<(), String> {
+    let dir = std::path::Path::new(&path)
+        .parent()
+        .ok_or("the transcript has no folder")?;
+    if cfg!(target_os = "linux") {
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("xdg-open: {e}"))
+    } else {
+        Err("opening a folder is only written for Linux".into())
+    }
+}
+
+fn transcribing(app: &AppHandle) -> bool {
+    app.try_state::<State>()
+        .is_some_and(|s| s.transcribing.lock().unwrap().is_some())
+}
+
+/// Start the live engine again after a file transcription.
+async fn resume_live(app: &AppHandle, engine: &Mutex<Engine>) {
+    let paused = app
+        .try_state::<State>()
+        .is_some_and(|s| s.paused.load(Ordering::Relaxed));
+    let mut engine = engine.lock().await;
+    match engine.start().await {
+        Ok(()) => {
+            // Same as `reopen_capture`: a restart begins unpaused.
+            engine.pause(paused);
+            notice(app, "即時字幕已恢復");
+        }
+        Err(e) => {
+            tracing::error!("restarting the live engine after a transcription: {e:#}");
+            notice(app, "即時字幕無法恢復，請重新啟動程式");
+        }
+    }
 }
 
 /// End the program.
@@ -761,6 +926,21 @@ fn download_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .build()
 }
 
+fn transcribe_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(window) = app.get_webview_window(TRANSCRIBE) {
+        window.show()?;
+        window.unminimize()?;
+        window.set_focus()?;
+        return Ok(window);
+    }
+    // Always on top for the same reason as the settings window: the bar is.
+    WebviewWindowBuilder::new(app, TRANSCRIBE, WebviewUrl::App("transcribe.html".into()))
+        .title("LiveInterpreter 語音轉檔")
+        .inner_size(520.0, 360.0)
+        .always_on_top(true)
+        .build()
+}
+
 fn settings_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     {
         // Only on the way in: opening the window again while it is already
@@ -958,6 +1138,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             set_click_through,
             ui_config,
@@ -975,6 +1156,11 @@ fn main() {
             transcripts,
             model_plan,
             fetch_models,
+            open_transcribe,
+            pick_audio,
+            transcribe_file,
+            cancel_transcribe,
+            show_in_folder,
             quit
         ])
         .on_window_event(|window, event| {
@@ -982,6 +1168,16 @@ fn main() {
             match (window.label(), event) {
                 (BAR, WindowEvent::Moved(to)) => on_moved(&app, *to),
                 (SETTINGS, WindowEvent::Destroyed) => revert_preview(&app),
+                // Nobody is left to see the result, and the live subtitles
+                // stay off until the transcription ends. Covers the title
+                // bar's close button as well as the window's own.
+                (TRANSCRIBE, WindowEvent::Destroyed) => {
+                    if let Some(state) = app.try_state::<State>()
+                        && let Some(cancel) = state.transcribing.lock().unwrap().as_ref()
+                    {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
                 _ => {}
             }
         })
@@ -1078,6 +1274,7 @@ fn main() {
             app.manage(State {
                 engine: engine.clone(),
                 paused: AtomicBool::new(false),
+                transcribing: std::sync::Mutex::new(None),
             });
 
             // Subscribed before `start`, so model-loading status reaches the bar.
@@ -1251,7 +1448,7 @@ mod tests {
             .iter()
             .filter_map(|w| w.as_str())
             .collect();
-        for label in [BAR, SETTINGS, DOWNLOAD] {
+        for label in [BAR, SETTINGS, DOWNLOAD, TRANSCRIBE] {
             assert!(
                 windows.contains(&label),
                 "window {label:?} is not in capabilities/default.json, so it cannot listen"
