@@ -324,11 +324,7 @@ fn segments(probs: &[f32], len: usize, pause: Duration, max: Duration) -> Vec<Ra
             Some(VadEvent::SpeechStart) => open = Some((i, false)),
             Some(VadEvent::SpeechEnd) => {
                 if let Some((s, cut_before)) = open.take() {
-                    pieces.push(Piece {
-                        windows: s..last_voiced + 1,
-                        cut_before,
-                        cut_after: false,
-                    });
+                    close(&mut pieces, s, cut_before, last_voiced);
                 }
             }
             None => {
@@ -346,14 +342,8 @@ fn segments(probs: &[f32], len: usize, pause: Duration, max: Duration) -> Vec<Ra
             }
         }
     }
-    if let Some((s, cut_before)) = open
-        && s <= last_voiced
-    {
-        pieces.push(Piece {
-            windows: s..last_voiced + 1,
-            cut_before,
-            cut_after: false,
-        });
+    if let Some((s, cut_before)) = open {
+        close(&mut pieces, s, cut_before, last_voiced);
     }
     pieces
         .iter()
@@ -362,6 +352,24 @@ fn segments(probs: &[f32], len: usize, pause: Duration, max: Duration) -> Vec<Ra
 }
 
 /// The earliest of the lowest-probability windows in `range`.
+/// End the open piece, which starts at window `s`, after `last_voiced`.
+///
+/// A forced cut can land in the pause after a sentence, past the last voiced
+/// window, when the cap falls while the gate is still counting that pause.
+/// Nothing is left to transcribe after such a cut, so no piece is made; the
+/// one before it ended in silence after all and gets its padding back.
+fn close(pieces: &mut Vec<Piece>, s: usize, cut_before: bool, last_voiced: usize) {
+    if s <= last_voiced {
+        pieces.push(Piece {
+            windows: s..last_voiced + 1,
+            cut_before,
+            cut_after: false,
+        });
+    } else if cut_before && let Some(before) = pieces.last_mut() {
+        before.cut_after = false;
+    }
+}
+
 fn quietest(probs: &[f32], range: Range<usize>) -> usize {
     let mut best = range.start;
     for i in range {
@@ -515,6 +523,22 @@ mod tests {
         let got = segments(&p, 509 * 512, PAUSE, MAX);
 
         assert_eq!(got[0].end, got[1].start);
+    }
+
+    #[test]
+    fn a_cap_reached_in_the_pause_after_a_sentence_leaves_one_piece() {
+        // The sentence stops just short of 12 s, and the cap falls while the
+        // gate is still counting the pause. The quietest window is late in
+        // that pause, after the last voiced one: the piece after the cut
+        // started past its own end, and slicing it panicked (a 24-minute
+        // recording, 2026-09-23).
+        let p = probs(&[(0.0, 20), (0.9, 358), (0.2, 10), (0.1, 40)]);
+
+        let got = segments(&p, 428 * 512, PAUSE, MAX);
+
+        // Windows 14..394: the cut at 388, the first 0.1, with the end padding
+        // a pause earns.
+        assert_eq!(got, vec![7168..201728]);
     }
 
     #[test]
