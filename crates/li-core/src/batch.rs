@@ -121,7 +121,7 @@ fn run(
     input: &Path,
     output: Output,
     cancel: &AtomicBool,
-    mut on_progress: impl FnMut(Progress),
+    on_progress: impl FnMut(Progress),
 ) -> Result<PathBuf> {
     let began = Instant::now();
     let lane = cfg
@@ -164,25 +164,70 @@ fn run(
     tracing::info!("{}", asr.backend());
     let mt = nllb.map(|n| li_mt::LocalNllb::open(&n)).transpose()?;
 
+    let text = transcribe_pieces(
+        rt,
+        asr.as_mut(),
+        &clip.pcm,
+        &pieces,
+        cancel,
+        |line| {
+            let translation = match &mt {
+                // Marks::Heard: whisper wrote this punctuation from the audio, the
+                // same answer the live MT worker gives for an accurate-lane line.
+                Some(mt) => mt.translate_blocking(&line.source, li_mt::chunk::Marks::Heard)?,
+                None => String::new(),
+            };
+            Ok(match output {
+                Output::En => render::txt(line),
+                Output::Zh => render::txt_translation(&translation),
+                Output::Both => render::bilingual(line, &translation),
+            })
+        },
+        on_progress,
+    )?;
+
+    let dir = li_transcript::expand_home(&cfg.transcript.dir);
+    let path = write_new(&dir, &stem(input), output.suffix(), &text)?;
+    tracing::info!(
+        "wrote {} in {:.0} s",
+        path.display(),
+        began.elapsed().as_secs_f64()
+    );
+    Ok(path)
+}
+
+/// Every piece through whisper, in order. `write` turns each line into the
+/// text it puts in the file; the file's whole text is returned.
+///
+/// Fails with [`Cancelled`] when `cancel` is set, checked between pieces and
+/// once more after the last.
+fn transcribe_pieces(
+    rt: &tokio::runtime::Handle,
+    asr: &mut dyn AsrEngine,
+    pcm: &[f32],
+    pieces: &[Range<usize>],
+    cancel: &AtomicBool,
+    mut write: impl FnMut(&TranscriptLine) -> Result<String>,
+    mut on_progress: impl FnMut(Progress),
+) -> Result<String> {
+    let total_s = samples_to_s(pcm.len());
     let mut text = String::new();
+    // What whisper has heard so far, kept apart from `text`: the file holds
+    // timestamps and the Chinese translation, and prompting whisper with its
+    // own output translated has it answer in Chinese and then copy that
+    // answer on for minutes (2026-09-23: 71 lines of a 24-minute bilingual
+    // transcript; none when the prompt was the English alone).
+    let mut heard = String::new();
     for (n, piece) in pieces.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             return Err(Cancelled.into());
         }
-        let Some(line) = recognise(rt, asr.as_mut(), &clip.pcm, piece, n as u64, &text)? else {
+        let Some(line) = recognise(rt, asr, pcm, piece, n as u64, &heard)? else {
             continue;
         };
-        let translation = match &mt {
-            // Marks::Heard: whisper wrote this punctuation from the audio, the
-            // same answer the live MT worker gives for an accurate-lane line.
-            Some(mt) => mt.translate_blocking(&line.source, li_mt::chunk::Marks::Heard)?,
-            None => String::new(),
-        };
-        text.push_str(&match output {
-            Output::En => render::txt(&line),
-            Output::Zh => render::txt_translation(&translation),
-            Output::Both => render::bilingual(&line, &translation),
-        });
+        text.push_str(&write(&line)?);
+        heard.push_str(&line.source);
+        heard.push(' ');
         on_progress(Progress {
             done_s: samples_to_s(piece.end).min(total_s),
             total_s,
@@ -196,15 +241,7 @@ fn run(
         done_s: total_s,
         total_s,
     });
-
-    let dir = li_transcript::expand_home(&cfg.transcript.dir);
-    let path = write_new(&dir, &stem(input), output.suffix(), &text)?;
-    tracing::info!(
-        "wrote {} in {:.0} s",
-        path.display(),
-        began.elapsed().as_secs_f64()
-    );
-    Ok(path)
+    Ok(text)
 }
 
 /// One piece of speech through whisper. `None` for a piece whisper heard as
@@ -219,7 +256,9 @@ fn recognise(
 ) -> Result<Option<TranscriptLine>> {
     // Carry the end of what has been said so far, as the live accurate lane
     // does (`li_stream::StreamConfig::prompt_chars`): it keeps names and
-    // spellings consistent from one piece to the next.
+    // spellings consistent from one piece to the next. It also keeps the
+    // punctuation: with no prompt, 35% of the lines in a 24-minute recording
+    // came back with none at all, against 2% with one (2026-09-23).
     asr.set_prompt(prompt_tail(so_far, 200));
     let t_origin = Duration::from_secs_f64(samples_to_s(piece.start));
     let events = rt.block_on(asr.feed(&pcm[piece.clone()], t_origin))?;
@@ -599,6 +638,90 @@ mod tests {
         let err = "cn".parse::<Output>().unwrap_err().to_string();
 
         assert!(err.contains("en, zh, both"), "{err}");
+    }
+
+    /// Hears "piece 0", "piece 1"... in turn, and keeps every prompt it was
+    /// given.
+    struct Echo {
+        heard: usize,
+        prompts: Vec<String>,
+        prompt: String,
+        info: li_asr::BackendInfo,
+    }
+
+    impl Echo {
+        fn new() -> Self {
+            Echo {
+                heard: 0,
+                prompts: Vec::new(),
+                prompt: String::new(),
+                info: li_asr::BackendInfo {
+                    engine: "echo",
+                    model: String::new(),
+                    selection: li_asr::Selection {
+                        accel: li_asr::Accel::Cpu,
+                        gpu_index: 0,
+                        device: String::new(),
+                        note: None,
+                    },
+                },
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AsrEngine for Echo {
+        fn capabilities(&self) -> li_asr::AsrCaps {
+            li_asr::AsrCaps {
+                native_streaming: false,
+                punctuated: true,
+            }
+        }
+
+        fn backend(&self) -> &li_asr::BackendInfo {
+            &self.info
+        }
+
+        async fn feed(&mut self, _pcm: &[f32], _t_origin: Duration) -> Result<Vec<AsrEvent>> {
+            self.prompts.push(self.prompt.clone());
+            let text = format!("piece {}.", self.heard);
+            self.heard += 1;
+            Ok(vec![AsrEvent::Partial {
+                seg_id: 0,
+                text,
+                words: Vec::new(),
+            }])
+        }
+
+        async fn finalize(&mut self) -> Result<Option<AsrEvent>> {
+            Ok(None)
+        }
+
+        fn set_prompt(&mut self, text: &str) {
+            self.prompt = text.to_owned();
+        }
+    }
+
+    #[test]
+    fn whisper_is_prompted_with_the_english_it_heard_not_the_translation() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let mut asr = Echo::new();
+        let pcm = vec![0.0; 32_000];
+
+        transcribe_pieces(
+            rt.handle(),
+            &mut asr,
+            &pcm,
+            &[0..16_000, 16_000..32_000],
+            &AtomicBool::new(false),
+            |line| Ok(render::bilingual(line, "第零段。")),
+            |_| {},
+        )
+        .unwrap();
+
+        assert_eq!(asr.prompts, ["", "piece 0."]);
     }
 
     #[test]

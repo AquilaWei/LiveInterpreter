@@ -30,6 +30,8 @@ bzip2 = { workspace = true }
 futures-util = { workspace = true }
 
 [dev-dependencies]
+# A stand-in whisper for the batch loop's tests.
+async-trait = { workspace = true }
 # The settings window edits the config as JSON; a test keeps that trip honest.
 serde_json = { workspace = true }
 
