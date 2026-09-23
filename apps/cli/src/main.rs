@@ -224,12 +224,17 @@ async fn fetch_models(args: &Args) -> Result<()> {
 async fn transcribe(args: &Args, input: &std::path::Path) -> Result<()> {
     let cfg = resolve(args)?;
     let cancel = Arc::new(AtomicBool::new(false));
+    // Quiet once cancelled, so the count does not write over "stopping…".
+    let quiet = cancel.clone();
     let job = batch::transcribe(
         cfg,
         input.to_path_buf(),
         args.output.unwrap_or(Output::Both),
         cancel.clone(),
-        |p| {
+        move |p| {
+            if quiet.load(Ordering::Relaxed) {
+                return;
+            }
             eprint!("\r  {} / {}\x1b[K", clock(p.done_s), clock(p.total_s));
         },
     );
