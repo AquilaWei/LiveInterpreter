@@ -37,7 +37,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # sherpa-rs-sys downloads its prebuilt libraries to ~/.cache/sherpa-rs,
+      # outside target/. Caching target/ alone restores a build script that
+      # will not rerun, pointing at libraries the fresh runner does not have,
+      # and every test binary fails to link. The prefix went to v1 when the
+      # directory was added, so no cache saved without it is restored.
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+          cache-directories: ~/.cache/sherpa-rs
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
       - run: cargo test --workspace --no-default-features
