@@ -35,6 +35,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 pub mod chunk;
+pub mod filler;
 pub mod nllb;
 pub mod zh;
 

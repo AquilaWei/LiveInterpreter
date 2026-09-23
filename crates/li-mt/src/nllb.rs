@@ -27,7 +27,7 @@ use ct2rs::sys::{ComputeType, Config, Device, TranslationOptions, Translator as 
 use serde::{Deserialize, Serialize};
 use tokenizers::Tokenizer;
 
-use crate::{Translator, chunk, chunk::Marks, zh::Zh};
+use crate::{Translator, chunk, chunk::Marks, filler, zh::Zh};
 
 /// NLLB's own name for English.
 const SRC_LANG: &str = "eng_Latn";
@@ -187,11 +187,31 @@ impl LocalNllb {
         Ok(self.zh.finish(&self.pieces(src, marks)?))
     }
 
-    /// What the model itself produced, one string per clause, before OpenCC and
-    /// before punctuation. Exposed so a test can compare it against the prototype's
-    /// Python implementation without the post-processing in the way.
+    /// One string per clause, before OpenCC and before punctuation: what the
+    /// model produced, or for a clause of nothing but interjections, what
+    /// [`filler::render`] wrote in its place. Exposed so a test can compare it
+    /// against the prototype's Python implementation without the
+    /// post-processing in the way.
     pub fn pieces(&self, src: &str, marks: Marks) -> Result<Vec<String>> {
         let pieces = chunk::split(src, self.cfg.max_chunk_words, self.cfg.max_run_words, marks);
+        // "Mm-hmm." alone comes back from the model as 沒有任何問題; see
+        // `filler`. Those clauses never reach it, the rest go as one batch.
+        let mut out: Vec<Option<String>> = pieces.iter().map(|p| filler::render(p)).collect();
+        let rest: Vec<&str> = pieces
+            .iter()
+            .zip(&out)
+            .filter(|(_, done)| done.is_none())
+            .map(|(p, _)| *p)
+            .collect();
+        let mut translated = self.model(&rest)?.into_iter();
+        for slot in out.iter_mut().filter(|s| s.is_none()) {
+            *slot = translated.next();
+        }
+        Ok(out.into_iter().flatten().collect())
+    }
+
+    /// The pieces through CTranslate2 in one batch, one output per piece.
+    fn model(&self, pieces: &[&str]) -> Result<Vec<String>> {
         if pieces.is_empty() {
             return Ok(Vec::new());
         }
