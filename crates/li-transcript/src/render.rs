@@ -71,6 +71,18 @@ pub fn txt(line: &TranscriptLine) -> String {
     format!("{}\n", one_line(&line.source))
 }
 
+/// The translation alone, one sentence to a line, for a Chinese-only file.
+///
+/// A line whose translation never arrived writes nothing, not a blank line: a
+/// reader of a Chinese document has no use for a gap where a sentence went.
+pub fn txt_translation(translation: &str) -> String {
+    let translation = one_line(translation);
+    if translation.is_empty() {
+        return String::new();
+    }
+    format!("{translation}\n")
+}
+
 /// A source/translation pair for the optional bilingual file.
 ///
 /// `hh:mm:ss` rather than the full cue timing: this file is for reading and for
@@ -222,6 +234,16 @@ mod tests {
             bilingual(&line(72.5, 75.0, "Hello everybody."), "您好，各位。"),
             "[00:01:12] Hello everybody.\n           您好，各位。\n\n"
         );
+    }
+
+    #[test]
+    fn a_translation_line_is_the_text_and_a_newline() {
+        assert_eq!(txt_translation("您好，\n各位。"), "您好， 各位。\n");
+    }
+
+    #[test]
+    fn a_missing_translation_writes_nothing() {
+        assert_eq!(txt_translation("  "), "");
     }
 
     #[test]

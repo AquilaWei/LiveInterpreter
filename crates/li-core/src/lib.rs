@@ -6,6 +6,7 @@
 //! channels between stages are bounded so a slow stage drops old audio rather
 //! than growing an unbounded queue.
 
+pub mod batch;
 pub mod config;
 pub mod download;
 pub mod engine;
