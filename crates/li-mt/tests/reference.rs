@@ -165,3 +165,24 @@ fn phase_0_settings_reproduce_phase_0_output() {
         "only {same}/{total} lines reproduced the prototype"
     );
 }
+
+/// Alone, "Mm-hmm." came back from the model as 沒有任何問題。 ("no problem at
+/// all"), 18 times in one 24-minute conversation. It must not reach the model.
+#[test]
+fn a_hum_on_its_own_is_not_translated_into_a_sentence() {
+    let Some(dir) = model_dir() else {
+        eprintln!("skipped: no MT model; set LI_MT_MODEL_DIR");
+        return;
+    };
+    let mt = LocalNllb::open(&NllbConfig {
+        model_dir: dir,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let got = mt
+        .translate_blocking("Mm-hmm.", li_mt::chunk::Marks::Heard)
+        .unwrap();
+
+    assert_eq!(got, "嗯。");
+}
