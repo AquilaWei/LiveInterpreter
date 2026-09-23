@@ -130,7 +130,20 @@ fn run(
         .as_ref()
         .filter(|l| l.backend != "off")
         .context("file transcription needs the accurate lane, and it is off in config.toml")?;
+    // Where the models are, before anything slow: decoding an hour of audio
+    // and only then reporting that nothing was downloaded wastes the hour.
+    // Loading them waits until the audio has decoded, for the opposite
+    // reason -- a file that is not audio should not cost a model load first.
     let models = Models::new();
+    let spec = lane.to_spec(&models, Kind::Accurate, &cfg.asr.language)?;
+    let nllb = if output.needs_translation() {
+        if cfg.mt.backend == "off" {
+            bail!("a Chinese transcript needs translation, and it is off in config.toml");
+        }
+        Some(cfg.mt.to_nllb(&models)?)
+    } else {
+        None
+    };
 
     let clip = li_audio::decode::decode(input)?;
     let total_s = clip.duration_s();
@@ -147,17 +160,9 @@ fn run(
         pieces.len()
     );
 
-    let spec = lane.to_spec(&models, Kind::Accurate, &cfg.asr.language)?;
     let mut asr = li_asr::build(&spec)?;
     tracing::info!("{}", asr.backend());
-    let mt = if output.needs_translation() {
-        if cfg.mt.backend == "off" {
-            bail!("a Chinese transcript needs translation, and it is off in config.toml");
-        }
-        Some(li_mt::LocalNllb::open(&cfg.mt.to_nllb(&models)?)?)
-    } else {
-        None
-    };
+    let mt = nllb.map(|n| li_mt::LocalNllb::open(&n)).transpose()?;
 
     let mut text = String::new();
     for (n, piece) in pieces.iter().enumerate() {
@@ -536,6 +541,26 @@ mod tests {
         let p = probs(&[(0.0, 20), (0.9, 324)]);
 
         assert_eq!(segments(&p, 176_000, PAUSE, MAX), vec![7168..176_000]);
+    }
+
+    /// What this prevents: an hour of audio decoded, and only then the news
+    /// that the models were never downloaded.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_missing_model_is_reported_before_the_audio_is_read() {
+        let mut cfg = EngineConfig::default();
+        cfg.asr.accurate.as_mut().unwrap().model = "/nonexistent/ggml-small.en.bin".into();
+
+        let err = transcribe(
+            cfg,
+            "/nonexistent/talk.mp3".into(),
+            Output::En,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("model not found"), "{err:#}");
     }
 
     #[test]
