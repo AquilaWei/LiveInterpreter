@@ -252,7 +252,7 @@ fn reopen_capture(app: &AppHandle) {
             // old session is over either way.
             tracing::warn!("stopping the engine to change the audio source: {e:#}");
         }
-        match engine.start().await {
+        match start_saved(&app, &mut engine).await {
             Ok(()) => {
                 // A restart begins unpaused, and the bar's own idea of paused
                 // is in `State`. Left alone, the pause hotkey would need two
@@ -266,6 +266,19 @@ fn reopen_capture(app: &AppHandle) {
             }
         }
     });
+}
+
+/// Start the engine on the settings as saved now.
+///
+/// Every start after the first goes through here. The engine keeps a copy of
+/// the config it was given, and a bare `start` reads that copy: until this
+/// existed, switching the audio source restarted the engine on the old source
+/// (seen in a real log -- the speakers reopened after a switch to the
+/// microphone, and only quitting the program made the switch happen).
+async fn start_saved(app: &AppHandle, engine: &mut Engine) -> Result<()> {
+    let cfg = shell(app).lock().unwrap().cfg.clone();
+    engine.set_config(cfg)?;
+    engine.start().await
 }
 
 /// What the settings window shows after a save: where it went, and which
@@ -526,7 +539,9 @@ async fn resume_live(app: &AppHandle, engine: &Mutex<Engine>) {
         .try_state::<State>()
         .is_some_and(|s| s.paused.load(Ordering::Relaxed));
     let mut engine = engine.lock().await;
-    match engine.start().await {
+    // The saved settings, which is what makes an audio source switched during
+    // the transcription take effect now: `reopen_capture` stood aside for it.
+    match start_saved(app, &mut engine).await {
         Ok(()) => {
             // Same as `reopen_capture`: a restart begins unpaused.
             engine.pause(paused);
@@ -904,7 +919,7 @@ async fn fetch_models(app: AppHandle, state: tauri::State<'_, State>) -> Result<
     // that says how bad it was without it.
     tracing::info!(chunks, sent, "models downloaded");
 
-    if let Err(e) = state.engine.lock().await.start().await {
+    if let Err(e) = start_saved(&app, &mut *state.engine.lock().await).await {
         return Err(format!("模型下載完成，但引擎啟動失敗：{e:#}"));
     }
     if let Some(w) = app.get_webview_window(DOWNLOAD) {

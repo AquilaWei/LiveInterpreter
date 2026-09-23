@@ -55,3 +55,47 @@ async fn the_engine_can_be_started_again_after_being_stopped() {
         "the second session reused the first one's transcript files"
     );
 }
+
+/// What this prevents: switching the audio source in the settings window
+/// restarting the engine on the *old* source. The engine kept the config it
+/// was created with, so `stop` + `start` reopened whatever it had opened
+/// first -- seen in a real session log, speakers reopened after a switch to
+/// the microphone. A wav run cannot switch devices, so this checks the same
+/// thing through another setting the restart has to pick up: the transcript
+/// directory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_uses_the_config_set_while_stopped() {
+    let base = std::env::temp_dir().join("li_restart_config_test");
+    std::fs::remove_dir_all(&base).ok();
+    let mut cfg = EngineConfig::default();
+    cfg.asr.accurate = None;
+    cfg.mt.backend = "off".into();
+    cfg.transcript.enabled = true;
+    cfg.transcript.dir = base.join("first");
+    let missing = download::plan(&Models::new(), &cfg).unwrap();
+    if !missing.is_empty() {
+        eprintln!(
+            "SKIP: models not downloaded: {} (set $LI_MODEL_DIR)",
+            missing.models().join(", ")
+        );
+        return;
+    }
+    let wav = std::path::Path::new("../../testdata/jfk.wav");
+    let mut engine = Engine::new(cfg.clone()).unwrap();
+    engine.start_from_wav(wav).await.expect("first start");
+    engine.stop().await.expect("stop");
+
+    cfg.transcript.dir = base.join("second");
+    engine.set_config(cfg).unwrap();
+    engine
+        .start_from_wav(wav)
+        .await
+        .expect("start after set_config");
+    let second = engine.transcripts().to_vec();
+    engine.stop().await.expect("stop again");
+
+    assert!(
+        second.iter().all(|p| p.starts_with(base.join("second"))),
+        "the restart ignored the new config: {second:?}"
+    );
+}
