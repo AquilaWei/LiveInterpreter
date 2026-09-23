@@ -38,6 +38,8 @@ left behind when you finish.
   does not lose what has already been said.
 - **Taiwan usage**: translations are converted to the Traditional Chinese used in Taiwan
   with OpenCC `s2twp`.
+- **File transcription**: pick an English audio file (mp3, m4a, flac, ogg, wav) and get a
+  text file in **English, Chinese, or both side by side**.
 
 ## How it works
 
@@ -130,6 +132,36 @@ flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --help
 
 With the rpm / deb packages, the commands are `liveinterpreter-desktop` and `liveinterpreter`.
 
+### File transcription
+
+Turns an **English audio file** into a text file. Reads **mp3, m4a, flac, ogg and wav**
+(and the audio track of an mp4 video).
+
+**Desktop**: settings window (`Ctrl+Alt+S`) → "開啟語音轉檔…" → pick a file and the output →
+start. The live subtitles are **paused** while it runs and come back when it finishes or is
+cancelled.
+
+**Command line**:
+
+```bash
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --transcribe talk.mp3 --output both
+```
+
+| `--output` | Contents | File name |
+|---|---|---|
+| `both` (default) | each English sentence with its Chinese below, timestamped | `talk_en-zh.txt` |
+| `zh` | Chinese only, one sentence per line | `talk_zh.txt` |
+| `en` | English only, one sentence per line | `talk_en.txt` |
+
+> [!NOTE]
+> The Flatpak sandbox only opens `~/Documents`, so the **command line** can only read audio
+> files under it. The desktop window's file picker is not limited this way.
+
+The file goes into the transcript folder (`~/Documents/LiveInterpreter/` by default), with
+`-2`, `-3`… added instead of overwriting. Every sentence goes through the accurate lane
+(whisper) and is then translated; nothing is skipped for speed the way the live subtitles
+do. On an Intel Arc GPU a 100-second meeting recording takes about 30 seconds.
+
 ---
 
 ## Configuration
@@ -186,6 +218,7 @@ Tests that need the models print `SKIP` and pass when the models are absent.
 | Translation | NLLB-200-distilled-600M int8, [CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN (CPU) |
 | Simplified → Traditional | OpenCC `s2twp`, dictionaries compiled into the executable |
 | Audio capture | PulseAudio (Linux), cpal |
+| Audio file decoding | [Symphonia](https://github.com/pdeljanov/Symphonia) (pure Rust, no ffmpeg) |
 | UI | [Tauri 2](https://tauri.app/), plain HTML + JavaScript front end |
 | Packaging | Flatpak, rpm, deb |
 | CI | GitHub Actions: `cargo fmt`, `clippy -D warnings`, all tests |

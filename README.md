@@ -29,6 +29,7 @@
 - **不擋路的字幕條**：永遠在最上層、可拖曳、可切換點擊穿透，全域快捷鍵控制。
 - **逐字稿**：txt、srt、vtt、jsonl，每句定稿就寫入，程式當掉也不會丟失已經說過的內容。
 - **台灣用詞**：翻譯後經 OpenCC `s2twp` 轉成台灣慣用的繁體中文。
+- **語音轉檔**：選一個英文音檔（mp3、m4a、flac、ogg、wav），轉成文字檔，可選**英文、中文或中英對照**。
 
 ## 運作方式
 
@@ -116,6 +117,33 @@ flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --help
 
 用 rpm / deb 安裝的話，指令是 `liveinterpreter-desktop` 與 `liveinterpreter`。
 
+### 語音轉檔
+
+把一個**英文音檔**轉成文字檔。支援 **mp3、m4a、flac、ogg、wav**（mp4 影片裡的音軌也可以）。
+
+**桌面版**：設定視窗（`Ctrl+Alt+S`）→「開啟語音轉檔…」→ 選檔案、選輸出內容 → 開始轉檔。
+轉檔期間即時字幕會**暫停**，完成或取消後自動恢復。
+
+**命令列**：
+
+```bash
+flatpak run --command=liveinterpreter io.github.AquilaWei.LiveInterpreter --transcribe talk.mp3 --output both
+```
+
+| `--output` | 內容 | 檔名 |
+|---|---|---|
+| `both`（預設） | 每句英文下面接中文，附時間 | `talk_en-zh.txt` |
+| `zh` | 只有中文，一句一行 | `talk_zh.txt` |
+| `en` | 只有英文，一句一行 | `talk_en.txt` |
+
+> [!NOTE]
+> Flatpak 的沙盒只開放 `~/Documents`，所以**命令列**只讀得到放在那底下的音檔。桌面版的選檔
+> 視窗不受這個限制。
+
+檔案寫到逐字稿資料夾（預設 `~/Documents/LiveInterpreter/`），同名時自動加 `-2`、`-3`，
+不會覆蓋。每一句都走精準線（whisper）再翻譯，不像即時字幕會為了速度捨棄；在 Intel Arc
+上，100 秒的會議錄音約 30 秒轉完。
+
 ---
 
 ## 設定
@@ -168,6 +196,7 @@ cd LiveInterpreter
 | 翻譯 | NLLB-200-distilled-600M int8，[CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN（CPU） |
 | 簡轉繁 | OpenCC `s2twp`，字典編進執行檔 |
 | 音訊擷取 | PulseAudio（Linux）、cpal |
+| 音檔解碼 | [Symphonia](https://github.com/pdeljanov/Symphonia)（純 Rust，不需要 ffmpeg） |
 | 介面 | [Tauri 2](https://tauri.app/)，前端為純 HTML + JavaScript |
 | 打包 | Flatpak、rpm、deb |
 | CI | GitHub Actions：`cargo fmt`、`clippy -D warnings`、全部測試 |
