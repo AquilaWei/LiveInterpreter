@@ -10,6 +10,7 @@
 //! liveinterpreter                      # whatever the machine is playing
 //! liveinterpreter --source mic
 //! liveinterpreter --lanes fast --no-mt # what the fast lane alone hears
+//! liveinterpreter --transcribe talk.mp3 --output both
 //! ```
 //!
 //! Logs go to stderr and the subtitle to stdout, so `2>/dev/null` gives a clean
@@ -18,10 +19,13 @@
 mod bar;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use li_audio::{AudioSource, DesktopSource};
 use li_core::Engine;
+use li_core::batch::{self, Output};
 use li_core::config::EngineConfig;
 use li_core::download;
 use li_core::models::Models;
@@ -37,6 +41,8 @@ struct Args {
     device: Option<String>,
     config: Option<PathBuf>,
     wav: Option<PathBuf>,
+    transcribe: Option<PathBuf>,
+    output: Option<Output>,
     list_devices: bool,
     fetch_models: bool,
 }
@@ -54,6 +60,9 @@ usage: liveinterpreter [options]
   --no-transcript         do not write any transcript
   --config FILE           use this config.toml
   --wav FILE              play a wav file instead of listening (for checking)
+  --transcribe FILE       write a transcript of an audio file (mp3, m4a, flac,
+                          ogg, wav) into the transcript directory, then exit
+  --output O              with --transcribe: en | zh | both (default)
   --version               print the version and the commit it was built from
 ";
 
@@ -81,6 +90,8 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
         device: None,
         config: None,
         wav: None,
+        transcribe: None,
+        output: None,
         list_devices: false,
     };
     while let Some(flag) = it.next() {
@@ -99,6 +110,8 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
             "--transcript-dir" => a.transcript_dir = Some(val()?.into()),
             "--config" => a.config = Some(val()?.into()),
             "--wav" => a.wav = Some(val()?.into()),
+            "--transcribe" => a.transcribe = Some(val()?.into()),
+            "--output" => a.output = Some(val()?.parse()?),
             "--version" | "-V" => {
                 println!("{BUILD}");
                 std::process::exit(0);
@@ -109,6 +122,9 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args> {
             }
             other => bail!("unknown flag {other}\n\n{USAGE}"),
         }
+    }
+    if a.output.is_some() && a.transcribe.is_none() {
+        bail!("--output only means something with --transcribe");
     }
     Ok(a)
 }
@@ -138,6 +154,9 @@ fn main() -> Result<()> {
         .build()?;
     if args.fetch_models {
         return rt.block_on(fetch_models(&args));
+    }
+    if let Some(input) = &args.transcribe {
+        return rt.block_on(transcribe(&args, input));
     }
     rt.block_on(run(args))
 }
@@ -196,6 +215,56 @@ async fn fetch_models(args: &Args) -> Result<()> {
     .await?;
     println!("All models are in {}.", models.root().display());
     Ok(())
+}
+
+/// Transcribe one file and print where the transcript went.
+///
+/// The path goes to stdout and the progress to stderr, so
+/// `liveinterpreter --transcribe a.mp3 2>/dev/null` is the path and nothing else.
+async fn transcribe(args: &Args, input: &std::path::Path) -> Result<()> {
+    let cfg = resolve(args)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let job = batch::transcribe(
+        cfg,
+        input.to_path_buf(),
+        args.output.unwrap_or(Output::Both),
+        cancel.clone(),
+        |p| {
+            eprint!("\r  {} / {}\x1b[K", clock(p.done_s), clock(p.total_s));
+        },
+    );
+    tokio::pin!(job);
+    let result = tokio::select! {
+        r = &mut job => r,
+        _ = tokio::signal::ctrl_c() => {
+            // Finish the sentence in hand rather than abandon the thread
+            // holding whisper; `transcribe` then returns `Cancelled`.
+            cancel.store(true, Ordering::Relaxed);
+            eprint!("\r  stopping…\x1b[K");
+            job.await
+        }
+    };
+    eprintln!();
+    match result {
+        Ok(path) => {
+            println!("{}", path.display());
+            Ok(())
+        }
+        Err(e) if e.is::<batch::Cancelled>() => {
+            eprintln!("cancelled; nothing was written");
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// `h:mm:ss`, or `m:ss` under an hour.
+fn clock(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    match (s / 3600, s % 3600 / 60, s % 60) {
+        (0, m, s) => format!("{m}:{s:02}"),
+        (h, m, s) => format!("{h}:{m:02}:{s:02}"),
+    }
 }
 
 fn human(bytes: u64) -> String {
@@ -470,6 +539,51 @@ mod tests {
         assert!(Shown::take(&mut shown.source, 5));
         assert!(Shown::take(&mut shown.translation, 4));
         assert_eq!((shown.source, shown.translation), (Some(5), Some(4)));
+    }
+
+    #[test]
+    fn transcribe_takes_the_file_and_the_output() {
+        let a = args(&["--transcribe", "talk.mp3", "--output", "zh"]);
+        assert_eq!(a.transcribe, Some(PathBuf::from("talk.mp3")));
+        assert_eq!(a.output, Some(Output::Zh));
+    }
+
+    #[test]
+    fn an_unknown_output_is_rejected_with_the_real_ones() {
+        let err = parse(
+            ["--transcribe", "a.mp3", "--output", "cn"]
+                .map(String::from)
+                .into_iter(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("en, zh, both"), "{err}");
+    }
+
+    #[test]
+    fn output_without_transcribe_is_rejected() {
+        let err = parse(["--output", "zh"].map(String::from).into_iter())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--transcribe"), "{err}");
+    }
+
+    #[test]
+    fn transcribe_without_a_file_is_rejected() {
+        let err = parse(["--transcribe"].map(String::from).into_iter())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing its value"), "{err}");
+    }
+
+    #[test]
+    fn a_clock_under_an_hour_has_no_hours() {
+        assert_eq!(clock(192.4), "3:12");
+    }
+
+    #[test]
+    fn a_clock_over_an_hour_has_hours() {
+        assert_eq!(clock(3723.0), "1:02:03");
     }
 
     #[test]
