@@ -32,6 +32,11 @@
       translates to Traditional Chinese, and shows both lines in a floating
       always-on-top bar.
     </p>
+    <p>也能把英文音訊檔（mp3、m4a、flac、ogg、wav）轉成文字檔：英文、中文或中英對照。</p>
+    <p xml:lang="en">
+      It also turns an English audio file (mp3, m4a, flac, ogg, wav) into a
+      text file: English, Chinese, or both side by side.
+    </p>
     <p>全部在本機跑，不送任何音訊或文字到外部服務。模型在第一次啟動時下載（約 1 GB）。</p>
     <p xml:lang="en">
       Everything runs locally; no audio or text leaves the machine. The models
