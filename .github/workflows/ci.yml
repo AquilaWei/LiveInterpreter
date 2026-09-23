@@ -48,6 +48,14 @@ jobs:
           cache-directories: ~/.cache/sherpa-rs
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+      # The build script also copies the .so files next to the test binaries
+      # in target/debug, but rust-cache prunes them from what it saves, and a
+      # build script that does not rerun does not copy them back. The test
+      # binaries then link and fail to start. Load them from the cache itself,
+      # which clippy above has filled either way.
+      - run: >-
+          echo "LD_LIBRARY_PATH=$(dirname "$(find ~/.cache/sherpa-rs
+          -name libsherpa-onnx-c-api.so -print -quit)")" >> "$GITHUB_ENV"
       - run: cargo test --workspace --no-default-features
 
   # Windows is on hold, and this job has never run on a real
