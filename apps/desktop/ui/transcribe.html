@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>LiveInterpreter 語音轉檔</title>
+<style>
+  :root { color-scheme: light dark; --line: #0002; --note: #6b6b6b; --warn: #a5400f; --bar: #3574c2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --line: #fff2; --note: #9a9a9a; --warn: #ffab8a; --bar: #5b9ae0; }
+  }
+  body {
+    margin: 0; padding: 18px 22px;
+    font: 14px/1.6 "Noto Sans CJK TC", "Noto Sans TC", system-ui, sans-serif;
+  }
+  h1 { font-size: 16px; margin: 0 0 12px; }
+  p { margin: 8px 0; }
+  p.note { color: var(--note); }
+  p.warn { color: var(--warn); white-space: pre-wrap; }
+  code { font-family: ui-monospace, monospace; word-break: break-all; }
+  button { font: inherit; padding: 5px 14px; }
+  .file { display: flex; gap: 10px; align-items: center; }
+  .file button { flex: none; }
+  /* A long filename gets an ellipsis rather than pushing the button off. */
+  #name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--note); }
+  fieldset { border: none; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  legend { color: var(--note); padding: 0; margin-bottom: 4px; }
+  #track { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 16px 0 6px; }
+  #fill { height: 100%; width: 0; background: var(--bar); transition: width .2s linear; }
+  #status { color: var(--note); font-variant-numeric: tabular-nums; min-height: 1.6em; }
+  footer { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
+  #close { margin-left: auto; }
+</style>
+</head>
+<body>
+  <h1>語音轉檔</h1>
+
+  <div class="file">
+    <button id="pick">選擇音訊檔…</button>
+    <span id="name">尚未選擇（mp3、m4a、flac、ogg、wav）</span>
+  </div>
+
+  <fieldset id="output">
+    <legend>輸出內容</legend>
+    <label><input type="radio" name="output" value="both" checked /> 中英對照</label>
+    <label><input type="radio" name="output" value="zh" /> 中文</label>
+    <label><input type="radio" name="output" value="en" /> 英文</label>
+  </fieldset>
+
+  <div id="track"><div id="fill"></div></div>
+  <div id="status"></div>
+
+  <p class="note">轉檔時即時字幕會暫停，完成或取消後自動恢復。檔案存到逐字稿資料夾，檔名沿用音訊檔名。</p>
+  <p class="warn" id="error" hidden></p>
+
+  <footer>
+    <button id="go" disabled>開始轉檔</button>
+    <button id="cancel" hidden>取消</button>
+    <button id="show" hidden>開啟資料夾</button>
+    <button id="close">關閉</button>
+  </footer>
+
+  <script src="transcribe.js"></script>
+</body>
+</html>

@@ -5,7 +5,8 @@
   "windows": [
     "bar",
     "settings",
-    "download"
+    "download",
+    "transcribe"
   ],
   "permissions": [
     "core:default",

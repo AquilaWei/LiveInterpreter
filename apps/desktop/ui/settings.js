@@ -193,6 +193,9 @@ async function save() {
 }
 
 $("close").addEventListener("click", closeWindow);
+$("transcribe").addEventListener("click", () => {
+  invoke("open_transcribe").catch((e) => say(`開不了語音轉檔：${e}`));
+});
 
 // 關閉 closes this window; 結束程式 ends the program. They were one button
 // until a packaged build made it obvious that nothing on screen could stop the

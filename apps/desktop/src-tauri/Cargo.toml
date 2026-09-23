@@ -26,6 +26,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tauri-plugin-global-shortcut = "2.3.2"
+# The file picker for 語音轉檔. GTK 3, which inside a Flatpak goes through the
+# file-chooser portal, so the sandbox needs no filesystem permission for it.
+tauri-plugin-dialog = "2.7.3"
 
 [features]
 default = ["gpu-vulkan", "mt-dnnl"]
