@@ -270,12 +270,28 @@ const WINDOW_DUR: Duration = Duration::from_millis(WINDOW as u64 * 1000 / TARGET
 /// whisper hears "ello" and "thi".
 const PAD: usize = 6; // 192 ms
 
+/// How far back from the length cap to look for somewhere quieter to cut.
+const LOOKBACK: Duration = Duration::from_secs(3);
+
+/// A stretch of speech, in windows. A side that is a forced cut gets no
+/// [`PAD`]: the audio there belongs to the neighbouring piece, and handing it
+/// to both makes whisper write the word on the boundary twice.
+#[derive(Debug, Clone, PartialEq)]
+struct Piece {
+    windows: Range<usize>,
+    cut_before: bool,
+    cut_after: bool,
+}
+
 /// Where to cut the clip: sample ranges, one per piece of speech.
 ///
 /// A piece ends after `pause` of silence, the same 0.6 s the live lanes end a
-/// sentence on, or is cut at `max` if the speaker never stops. Silence at
-/// either end of a piece is trimmed off and [`PAD`] put back, so whisper is
-/// not handed long stretches of nothing to hallucinate over.
+/// sentence on. A speaker who never pauses that long is cut before `max`, at
+/// the quietest window in the [`LOOKBACK`] before it: live, that cut has to
+/// land wherever the clock says, but a file can afford to look back for a
+/// breath. Silence at either end of a piece is trimmed off and [`PAD`] put
+/// back, so whisper is not handed long stretches of nothing to hallucinate
+/// over.
 ///
 /// `len` is the clip in samples. It is not `probs.len() * WINDOW`: the last
 /// window is usually short, and a piece running to the end of the clip would
@@ -288,48 +304,80 @@ fn segments(probs: &[f32], len: usize, pause: Duration, max: Duration) -> Vec<Ra
         min_silence: pause,
         ..GateConfig::default()
     };
-    let max_windows = (max.as_millis() / WINDOW_DUR.as_millis()) as usize;
+    let max_windows = windows_in(max);
+    let lookback = windows_in(LOOKBACK).min(max_windows - 1);
     let mut gate = Gate::new(cfg);
-    let mut windows: Vec<Range<usize>> = Vec::new();
-    let mut start: Option<usize> = None;
+    let mut pieces: Vec<Piece> = Vec::new();
+    // Where the open piece starts, and whether that start is a forced cut.
+    let mut open: Option<(usize, bool)> = None;
     let mut last_voiced = 0;
     for (i, &p) in probs.iter().enumerate() {
         if p >= cfg.silence_threshold {
             last_voiced = i;
         }
         match gate.push(p, WINDOW_DUR) {
-            Some(VadEvent::SpeechStart) => start = Some(i),
+            Some(VadEvent::SpeechStart) => open = Some((i, false)),
             Some(VadEvent::SpeechEnd) => {
-                if let Some(s) = start.take() {
-                    windows.push(s..last_voiced + 1);
+                if let Some((s, cut_before)) = open.take() {
+                    pieces.push(Piece {
+                        windows: s..last_voiced + 1,
+                        cut_before,
+                        cut_after: false,
+                    });
                 }
             }
             None => {
-                // A give-up, not a sentence break: the speaker has not paused.
-                if let Some(s) = start
+                if let Some((s, cut_before)) = open
                     && i + 1 - s >= max_windows
                 {
-                    windows.push(s..i + 1);
-                    start = Some(i + 1);
+                    let cut = quietest(probs, i + 1 - lookback..i + 1);
+                    pieces.push(Piece {
+                        windows: s..cut,
+                        cut_before,
+                        cut_after: true,
+                    });
+                    open = Some((cut, true));
                 }
             }
         }
     }
-    if let Some(s) = start
+    if let Some((s, cut_before)) = open
         && s <= last_voiced
     {
-        windows.push(s..last_voiced + 1);
+        pieces.push(Piece {
+            windows: s..last_voiced + 1,
+            cut_before,
+            cut_after: false,
+        });
     }
-
-    let total = probs.len();
-    windows
-        .into_iter()
-        .map(|w| {
-            let a = w.start.saturating_sub(PAD) * WINDOW;
-            let b = ((w.end + PAD).min(total) * WINDOW).min(len);
-            a..b
-        })
+    pieces
+        .iter()
+        .map(|p| to_samples(p, probs.len(), len))
         .collect()
+}
+
+/// The earliest of the lowest-probability windows in `range`.
+fn quietest(probs: &[f32], range: Range<usize>) -> usize {
+    let mut best = range.start;
+    for i in range {
+        if probs[i] < probs[best] {
+            best = i;
+        }
+    }
+    best
+}
+
+/// A piece's windows as samples, padded on the sides that are not cuts and
+/// kept inside the clip.
+fn to_samples(p: &Piece, windows: usize, len: usize) -> Range<usize> {
+    let pad = |cut: bool| if cut { 0 } else { PAD };
+    let a = p.windows.start.saturating_sub(pad(p.cut_before));
+    let b = (p.windows.end + pad(p.cut_after)).min(windows);
+    a * WINDOW..(b * WINDOW).min(len)
+}
+
+fn windows_in(d: Duration) -> usize {
+    (d.as_millis() / WINDOW_DUR.as_millis()) as usize
 }
 
 fn samples_to_s(n: usize) -> f64 {
@@ -432,14 +480,36 @@ mod tests {
     }
 
     #[test]
-    fn fifteen_seconds_without_a_pause_is_cut_at_twelve() {
-        // 469 windows is 15.0 s; 375 is 12.0 s.
+    fn fifteen_seconds_of_even_speech_is_cut_three_seconds_before_the_cap() {
+        // 469 windows is 15.0 s; the cap is 375, and the look-back 93.
         let p = probs(&[(0.9, 469)]);
 
         let got = segments(&p, 469 * 512, PAUSE, MAX);
 
-        // Windows 0..381 and 369..469: the padding overlaps at the cut.
-        assert_eq!(got, vec![0..195072, 188928..240128]);
+        // Windows 0..282 and 282..469.
+        assert_eq!(got, vec![0..144384, 144384..240128]);
+    }
+
+    #[test]
+    fn a_long_sentence_is_cut_at_its_quietest_moment_before_the_cap() {
+        // A breath at 9.6 s: quieter than speech, not quiet enough to be a pause.
+        let p = probs(&[(0.9, 300), (0.4, 6), (0.9, 163)]);
+
+        let got = segments(&p, 469 * 512, PAUSE, MAX);
+
+        // Windows 0..300 and 300..469.
+        assert_eq!(got, vec![0..153600, 153600..240128]);
+    }
+
+    #[test]
+    fn the_two_sides_of_a_forced_cut_do_not_overlap() {
+        // What this prevents: whisper writing "what effects" at the end of
+        // one line and again at the start of the next.
+        let p = probs(&[(0.0, 20), (0.9, 469), (0.0, 20)]);
+
+        let got = segments(&p, 509 * 512, PAUSE, MAX);
+
+        assert_eq!(got[0].end, got[1].start);
     }
 
     #[test]
