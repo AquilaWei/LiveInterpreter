@@ -35,18 +35,21 @@
 // fast lane's sentence during the silence that ends it, which is what puts
 // Chinese on the bar 0.8 s earlier than waiting for the accurate lane would.
 
+import { place } from "./rows.js";
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const win = window.__TAURI__.window.getCurrentWindow();
 
 const root = document.getElementById("root");
 const source = document.getElementById("source");
-const target = document.getElementById("target");
+const targets = document.getElementById("targets");
 const status = document.getElementById("status");
 
 // Settings arrive from `config.toml`; these are only what is on screen for the
 // frame before they do.
 let dwellMs = 700;
+let keep = 2;
 
 // --- what is on the bar ----------------------------------------------------
 
@@ -55,7 +58,11 @@ let shown = -1;            // the line the source row is showing
 let shownAt = -1e9;        // when it took the row, for the dwell rule
 let queued = -1;           // a newer line waiting for the dwell to expire
 let timer = null;
-let translated = -1;       // the line the translation row is showing
+
+// The translation rows: the last `keep` translations, oldest first. See
+// rows.js for why there is more than one.
+let recent = [];
+const translations = new Map(); // line_id -> { text, settled }
 
 function note(lineId, text, settled) {
   if (lineId < shown) return;          // the one rule
@@ -135,6 +142,38 @@ function keepTail(el, text) {
   }
 }
 
+function translate(lineId, text, settled) {
+  const next = place(recent, lineId, keep);
+  if (!next.includes(lineId)) return;
+  recent = next;
+  translations.set(lineId, { text, settled });
+  for (const id of translations.keys()) {
+    if (!recent.includes(id)) translations.delete(id);
+  }
+  paintTranslations();
+}
+
+// One element per kept translation, always all of them: an empty row still
+// reserves its height, so the bar does not grow and shrink as the first few
+// lines of a session arrive. The newest is the last row.
+function paintTranslations() {
+  while (targets.children.length < keep) {
+    const row = document.createElement("div");
+    row.className = "target";
+    targets.appendChild(row);
+  }
+  while (targets.children.length > keep) targets.firstChild.remove();
+  const rows = [...targets.children];
+  const offset = keep - recent.length;
+  rows.forEach((row, i) => {
+    const t = i >= offset ? translations.get(recent[i - offset]) : null;
+    row.textContent = t ? t.text : "";
+    row.classList.toggle("tentative", Boolean(t) && !t.settled);
+    row.classList.toggle("older", i < keep - 1);
+  });
+  fit();
+}
+
 function render(ev) {
   switch (ev.kind) {
     case "partial":
@@ -147,14 +186,7 @@ function render(ev) {
       note(ev.line_id, ev.text, true);
       break;
     case "translation":
-      // Same rule as the source row, for the same reason -- and it is what
-      // keeps a draft from overwriting the settled translation of a line the
-      // row has already moved past.
-      if (ev.line_id < translated) break;
-      translated = ev.line_id;
-      target.classList.toggle("tentative", !ev.settled);
-      target.textContent = ev.text;
-      fit();
+      translate(ev.line_id, ev.text, ev.settled);
       break;
     case "status":
       // "listening" is not news, and a subtitle bar with a permanent label on
@@ -242,7 +274,9 @@ async function applyConfig(ui) {
   s.setProperty("--target-rows", ui.target_rows);
   source.hidden = !ui.show_source;
   dwellMs = ui.min_dwell_ms;
-  fit();
+  keep = Math.max(1, ui.target_lines);
+  recent = recent.slice(-keep);
+  paintTranslations();
 }
 
 // Dragging: press and hold anywhere that is not a control. Where the bar ends
@@ -270,7 +304,7 @@ const params = new URLSearchParams(location.search);
 if (params.get("probe") === "1") {
   document.body.classList.add("probe");
   note(1, "And this is our first meeting, surprisingly enough.", true);
-  target.textContent = "而這出乎意料地是我們的第一次會議。";
+  translate(1, "而這出乎意料地是我們的第一次會議。", true);
   status.textContent = "probe";
   let on = false;
   // The bar reports on itself. Whether a click "goes through" is a judgement

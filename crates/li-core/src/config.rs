@@ -81,6 +81,16 @@ pub struct UiCfg {
     /// `StreamConfig::max_words` in the worst case, which no single row holds.
     pub source_rows: usize,
     pub target_rows: usize,
+    /// How many translations stay on the bar: the newest at the bottom, the
+    /// ones before it dimmed above it, rolling up like broadcast captions.
+    /// Each may wrap to `target_rows`. 1 is the old single-row bar.
+    ///
+    /// 2 by default because one was not enough for a fast speaker: in two
+    /// sessions (2026-09-24) 13 of 67 translations were replaced before they
+    /// could be read at 7 characters a second, and with two kept, 4. A
+    /// minimum reading time was tried on the same sessions instead and lost:
+    /// the bar fell up to 5.3 s behind and still had to skip lines.
+    pub target_lines: usize,
     /// Shortest time a line stays on the bar before a newer one may take it.
     /// One fast-lane endpoint can close several lines at once,
     /// and without this they flash past unread.
@@ -122,6 +132,7 @@ impl Default for UiCfg {
             margin_px: 40.0,
             source_rows: 1,
             target_rows: 2,
+            target_lines: 2,
             min_dwell_ms: 700,
             show_source: true,
             click_through: false,

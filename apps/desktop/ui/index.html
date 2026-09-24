@@ -46,20 +46,28 @@
 
      `em` and not `lh`: the unit resolves against each row's own font size,
      which is what makes the smaller source line reserve a smaller row. */
-  #source, #target {
+  #source, .target {
     display: -webkit-box; -webkit-box-orient: vertical;
     line-height: 1.35; min-height: 1.35em; overflow: hidden;
   }
   #source { -webkit-line-clamp: var(--source-rows); line-clamp: var(--source-rows); }
-  #target { -webkit-line-clamp: var(--target-rows); line-clamp: var(--target-rows); }
+  .target { -webkit-line-clamp: var(--target-rows); line-clamp: var(--target-rows); }
+  #targets { display: flex; flex-direction: column; gap: 2px; }
   /* Dimmed while it is the fast lane's guess and may still be replaced. The
      translation row does the same: a draft is translated from fast-lane text
      and gets overwritten when the accurate lane answers, and the reader is
      owed the difference between "this is the answer" and "this is early". */
   #source { color: #e8e8e8; font-size: 0.8em; }
   #source.tentative { color: #9a9a9a; }
-  #target { color: #7fe3ff; }
-  #target.tentative { color: #58a0b4; }
+  .target { color: #7fe3ff; }
+  .target.tentative { color: #58a0b4; }
+  /* The translations before the newest one, kept so a fast speaker's
+     sentence can still be finished (see rows.js). Grey rather than a paler
+     blue: the newest is often a draft, already in the paler blue above, and
+     a faded older row looked the same as it -- the eye could not tell which
+     one had just arrived. Same size, because the older one has to stay as
+     readable as it was a moment ago. */
+  .target.older { color: #b4bcc0; }
   #status {
     position: absolute; top: 2px; right: 8px;
     font-size: 11px; color: #8a8a8a; font-family: system-ui, sans-serif;
@@ -80,7 +88,7 @@
     <div id="bar">
       <div id="status"></div>
       <div id="source" class="tentative"></div>
-      <div id="target"></div>
+      <div id="targets"></div>
     </div>
 
     <!-- Only shown with LI_PROBE=1. The four things Wayland might refuse

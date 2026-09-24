@@ -97,6 +97,11 @@
     <output for="target_rows"></output>
   </div>
   <div class="row">
+    <label for="target_lines">保留譯文句數</label>
+    <input type="range" id="target_lines" min="1" max="3" step="1" />
+    <output for="target_lines"></output>
+  </div>
+  <div class="row">
     <label for="min_dwell_ms">最短停留（ms）</label>
     <input type="range" id="min_dwell_ms" min="0" max="2000" step="50" />
     <output for="min_dwell_ms"></output>
@@ -106,6 +111,7 @@
     <label><input type="checkbox" id="click_through" /> 點擊穿透</label>
   </div>
   <p class="note">超過列數上限的部分會被裁掉；原文未定稿時裁的是前面，正在讀的尾巴留著。逐字稿檔案不受影響。</p>
+  <p class="note">保留譯文句數：新的翻譯出現在最下面，前面幾句變淡留在上方，講得快時也來得及讀完。設為 1 就只顯示最新一句。</p>
   <p class="note">拖曳字幕條可以移動它，位置會自動記住。</p>
 
   <h2>快捷鍵 <small>存檔後重新註冊</small></h2>
