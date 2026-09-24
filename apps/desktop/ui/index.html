@@ -65,9 +65,11 @@
      sentence can still be finished (see rows.js). Grey rather than a paler
      blue: the newest is often a draft, already in the paler blue above, and
      a faded older row looked the same as it -- the eye could not tell which
-     one had just arrived. Same size, because the older one has to stay as
-     readable as it was a moment ago. */
-  .target.older { color: #b4bcc0; }
+     one had just arrived. And darker than anything the fast lane shows
+     (luminance 0.165 against 0.31-0.32), because a light grey competed with
+     the newest line and made the two rows hard to read (user, 2026-09-24).
+     Still 4.3:1 on black, readable at the bar's size. */
+  .target.older { color: #6c7275; }
   #status {
     position: absolute; top: 2px; right: 8px;
     font-size: 11px; color: #8a8a8a; font-family: system-ui, sans-serif;
