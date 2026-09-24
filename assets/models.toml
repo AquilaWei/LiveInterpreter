@@ -87,6 +87,27 @@ files = [
 ]
 
 [[model]]
+id = "opus-mt-en-zh-ct2-int8"
+kind = "mt"
+dest = "opus-mt-en-zh-ct2-int8"
+base = "https://huggingface.co/jiangzhuo9357/opus-mt-en-zh-ct2/resolve/main"
+note = """Helsinki-NLP/opus-mt-en-zh (Marian, 77M parameters) in a third-party CTranslate2 int8
+conversion, the same arrangement as NLLB's. Not the translator: li_mt::opus asks it only for a
+piece NLLB could not write a character of (NLLB's vocabulary has no 饋, 碩, 鋰, ...): 21 missing
+characters over 109 real lines. Asked with >>cmn_Hans<< -- >>cmn_Hant<< stops after the first
+sentence far more often (12 of 34 lines against 2). Optional at run time: without it the gap is
+marked with a box.
+
+CC-BY-4.0: commercial use allowed, with attribution. See NOTICE."""
+files = [
+  { name = "model.bin",              size = 79567635, sha256 = "327584c20bb83c7e89d595bcfa30b6ef3771c10816f707e892c4bbb1f808a8fb" },
+  { name = "source.spm",             size = 806435,   sha256 = "5775ddc9e3ff2fae91554da56468ad35ff56edaba870fea74447bc7234bfdaa8" },
+  { name = "target.spm",             size = 804600,   sha256 = "81dc94efa84e4025ef38d25d5d07429fe41e3eb29d44003f1db6fe98487b0052" },
+  { name = "shared_vocabulary.json", size = 1303887,  sha256 = "37314a6abb25ed8f8497498aeeb31fcea98de892bf00ff7c2e8c966b26fe0b82" },
+  { name = "config.json",            size = 223,      sha256 = "8f6496adfc930cbfecbe8281112197705c488fab47d34b4829b06d7f478909af" },
+]
+
+[[model]]
 id = "online-punct-en-2024-08-06"
 kind = "punct"
 dest = "."

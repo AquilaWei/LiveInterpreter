@@ -215,7 +215,7 @@ Tests that need the models print `SKIP` and pass when the models are absent.
 | Fast-lane ASR | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) streaming Zipformer (CPU), plus a small model that restores punctuation and casing |
 | Accurate-lane ASR | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `small.en` q5_1 (Vulkan); `base.en` without a GPU |
 | Voice activity detection | Silero VAD, ONNX Runtime |
-| Translation | NLLB-200-distilled-600M int8, [CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN (CPU) |
+| Translation | NLLB-200-distilled-600M int8, [CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN (CPU); a piece with a character NLLB cannot write goes to [Opus-MT en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) instead, and a gap neither can fill is marked □ |
 | Simplified → Traditional | OpenCC `s2twp`, dictionaries compiled into the executable |
 | Audio capture | PulseAudio (Linux), cpal |
 | Audio file decoding | [Symphonia](https://github.com/pdeljanov/Symphonia) (pure Rust, no ffmpeg) |

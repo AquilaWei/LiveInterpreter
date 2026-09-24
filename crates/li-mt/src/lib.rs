@@ -37,6 +37,8 @@ use async_trait::async_trait;
 pub mod chunk;
 pub mod filler;
 pub mod nllb;
+pub mod opus;
+mod spm;
 pub mod zh;
 
 pub use nllb::{LocalNllb, NllbConfig};

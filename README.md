@@ -193,7 +193,7 @@ cd LiveInterpreter
 | 快線辨識 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) streaming Zipformer（CPU），另有小模型補標點與大小寫 |
 | 精準線辨識 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `small.en` q5_1（Vulkan），無 GPU 時退回 `base.en` |
 | 語音偵測 | Silero VAD，ONNX Runtime |
-| 翻譯 | NLLB-200-distilled-600M int8，[CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN（CPU） |
+| 翻譯 | NLLB-200-distilled-600M int8，[CTranslate2](https://github.com/OpenNMT/CTranslate2) + oneDNN（CPU）；NLLB 寫不出的字改由 [Opus-MT en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) 補翻，兩者都寫不出就標 □ |
 | 簡轉繁 | OpenCC `s2twp`，字典編進執行檔 |
 | 音訊擷取 | PulseAudio（Linux）、cpal |
 | 音檔解碼 | [Symphonia](https://github.com/pdeljanov/Symphonia)（純 Rust，不需要 ffmpeg） |

@@ -73,5 +73,16 @@ One of them needs saying out loud:
       trait (crates/li-mt), and assets/models.toml is where the choice is
       recorded.
 
+And one needs crediting:
+
+  Opus-MT en-zh (the fallback translator)               CC-BY-4.0
+
+      Helsinki-NLP/opus-mt-en-zh, by Jörg Tiedemann and Santhosh
+      Thottingal, "OPUS-MT -- Building open translation services for the
+      World" (EAMT 2020), https://huggingface.co/Helsinki-NLP/opus-mt-en-zh.
+      Downloaded in a third-party CTranslate2 int8 conversion
+      (jiangzhuo9357/opus-mt-en-zh-ct2), not modified further. Asked only for
+      the pieces NLLB cannot write a character of.
+
 The Apache-2.0 licence on this code does not extend to any of those models,
 and none of them is a derivative work of this code.
