@@ -7,16 +7,16 @@
 // on screen for 0.4 s. Holding each one for a reading time instead makes the
 // bar fall behind the speaker and then skip lines to catch up.
 //
-// So the last `keep` translations stay, newest at the bottom, the way
-// broadcast captions roll up: a sentence stays readable for as long as the
-// next one takes to arrive *and* the one after that. Replayed over the same
+// So the last `keep` translations stay: a sentence stays readable for as long
+// as the next one takes to arrive *and* the one after that. Replayed over the same
 // two sessions, keeping two left 4 of 67 unreadable, with no delay added.
 //
 // Kept apart from `main.js` so `node --test` can check it without a window.
 
 // Where `lineId` goes, given the ids now on the bar (oldest first).
 //
-// Returns the new list. A line already on the bar is updated where it is --
+// Returns the new list, oldest first; main.js paints it the other way up, so
+// the newest sits right under the English it translates. A line already on the bar is updated where it is --
 // that is the accurate lane's settled translation replacing the draft, and it
 // can now land on a line the bar has moved past as long as it is still in
 // view. A line older than the newest one shown, and not among them, is

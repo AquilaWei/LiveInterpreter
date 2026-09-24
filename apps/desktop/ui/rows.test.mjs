@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import { place } from "./rows.js";
 
-test("a new translation goes below the one already there", () => {
+test("a new translation is added after the one already there", () => {
   assert.deepEqual(place([4], 5, 2), [4, 5]);
 });
 
