@@ -62,14 +62,12 @@
   .target { color: #7fe3ff; }
   .target.tentative { color: #58a0b4; }
   /* The translations before the newest one, kept so a fast speaker's
-     sentence can still be finished (see rows.js). Grey rather than a paler
-     blue: the newest is often a draft, already in the paler blue above, and
-     a faded older row looked the same as it -- the eye could not tell which
-     one had just arrived. And darker than anything the fast lane shows
-     (luminance 0.165 against 0.31-0.32), because a light grey competed with
-     the newest line and made the two rows hard to read (user, 2026-09-24).
-     Still 4.3:1 on black, readable at the bar's size. */
-  .target.older { color: #6c7275; }
+     sentence can still be finished (see rows.js). A dark blue: still read as
+     a translation, but darker than anything the fast lane shows (luminance
+     0.17 against 0.31-0.32 for the draft), because a row as light as the
+     draft competed with the newest line and made the two hard to tell apart
+     (user, 2026-09-24). Still 4.4:1 on black, readable at the bar's size. */
+  .target.older { color: #3f7a8c; }
   #status {
     position: absolute; top: 2px; right: 8px;
     font-size: 11px; color: #8a8a8a; font-family: system-ui, sans-serif;
