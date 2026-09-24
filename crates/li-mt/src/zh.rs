@@ -2,10 +2,15 @@
 //!
 //! Two steps, both required, both measured:
 //!
-//! * **OpenCC `s2twp`.** NLLB's `zho_Hant` is Traditional *characters* carrying
-//!   Mainland *words*: it writes 項目經理 where Taiwan writes 專案經理, 軟件 for
-//!   軟體, 信息 for 訊息, 鼠標 for 滑鼠. The product calls Traditional Chinese a
-//!   hard requirement, and the character set alone does not satisfy it.
+//! * **OpenCC `s2twp`.** NLLB is asked for Simplified Chinese (see
+//!   `nllb::TGT_LANG` for why), so this makes the characters Traditional and
+//!   the *words* Taiwanese in one pass: 项目经理 becomes 專案經理, 软件 軟體,
+//!   信息 訊息, 鼠标 滑鼠. The product calls Traditional Chinese a hard
+//!   requirement, and the character set alone would not satisfy it. It is
+//!   also cheap enough not to matter: a few microseconds a line against a
+//!   quarter of a second for the translation (measured 2026-09-24, which is
+//!   also when two faster converters were tried and dropped -- `zhconv` leaves
+//!   數據 and 信息 alone, and `opencc-fmmseg` only buys 3 µs).
 //! * **Full-width punctuation.** NLLB emits ASCII `,` `.` `:` with a space
 //!   after, so a subtitle line reads "我是薩拉, 專案經理." rather than
 //!   "我是薩拉，專案經理。". Rewriting it lifted chrF against the zh-TW

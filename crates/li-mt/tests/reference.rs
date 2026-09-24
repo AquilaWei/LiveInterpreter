@@ -1,4 +1,5 @@
-//! Checks this crate against the Python prototype it replaces.
+//! Checks this crate against the Python prototype it replaces, and the
+//! translations that went wrong in real use.
 //!
 //! `nllb_reference.json` was produced by running the prototype's `mt.py`
 //! unchanged over 53 lines -- real accurate-lane output from an eval run,
@@ -7,9 +8,14 @@
 //! records, for each: the token sequence transformers built, the hypothesis
 //! CTranslate2 returned, the text before OpenCC, and the text after it.
 //!
-//! Two of the three checks need no model and run in CI. The third needs the
-//! 600 MB model and is skipped when it is not there, exactly like the ASR
+//! The OpenCC checks need no model and run in CI. The rest need the 600 MB
+//! model and are skipped when it is not there, exactly like the ASR
 //! integration tests.
+//!
+//! The prototype asked NLLB for `zho_Hant`; this crate now asks for
+//! `zho_Hans` (see `nllb::TGT_LANG`). The tokens it sends are unchanged, so
+//! they are still checked against the prototype's. Its translations are not:
+//! they were meant to differ, and the regressions below say what for.
 
 use std::path::PathBuf;
 
@@ -20,7 +26,6 @@ use serde::Deserialize;
 struct Fixture {
     opencc_profile: String,
     src_lang: String,
-    tgt_lang: String,
     cases: Vec<Case>,
 }
 
@@ -58,7 +63,8 @@ fn the_pure_rust_opencc_matches_opencc_1_1_9_on_every_case() {
     );
 }
 
-/// The whole point of the conversion: `zho_Hant` is not Taiwan usage.
+/// The whole point of the conversion: even NLLB's Traditional output (the
+/// fixture's `zho_Hant`) is not Taiwan usage.
 #[test]
 fn the_conversion_is_not_a_no_op() {
     let f = fixture();
@@ -106,64 +112,48 @@ fn the_source_tokens_match_transformers_exactly() {
     assert!(checked >= 45);
 }
 
-/// The prototype's settings (greedy, one call per line, no trimming) against the prototype
-/// 0's output.
-///
-/// This does **not** assert equality, and the reason is worth stating: the int8
-/// GEMM compiled in here is ruy, and the PyPI `ctranslate2` wheel's is oneDNN.
-/// They round differently in the last bits, which is enough to flip the argmax
-/// wherever two tokens are near-tied -- and greedy decoding then never comes
-/// back. About three fifths of the lines still match; the rest differ in ways
-/// that read as neither better nor worse ("我們有25分鐘時間去做," against
-/// "我們有25分鐘時間去做這件事."). What *is* asserted exactly is the token
-/// sequence, above, which is where a port actually goes wrong.
-///
-/// So the bar here is a smoke test: a wrong language token or a mangled
-/// post-processor would send this to nearly zero, not to 61%. It is capped at
-/// the first `SAMPLE` lines because a debug build of CTranslate2 decodes at
-/// about five seconds a line, and the rate is what is being read, not the
-/// count.
+/// "Hello everybody." is how a meeting starts, and asked for `zho_Hant` NLLB
+/// answered it with a web page's breadcrumb, 您的位置: 首頁 ("you are here:
+/// home"). It must come back as a greeting.
 #[test]
-fn phase_0_settings_reproduce_phase_0_output() {
+fn a_greeting_is_not_translated_into_a_web_page_breadcrumb() {
     let Some(dir) = model_dir() else {
         eprintln!("skipped: no MT model; set LI_MT_MODEL_DIR");
         return;
     };
-    let f = fixture();
-    assert_eq!(f.tgt_lang, "zho_Hant");
     let mt = LocalNllb::open(&NllbConfig {
         model_dir: dir,
-        beam_size: 1,
-        max_chunk_words: 0,
-        trim_final_stop: false,
         ..Default::default()
     })
     .unwrap();
-    const SAMPLE: usize = 20;
-    let (mut same, mut total) = (0, 0);
-    for c in &f.cases {
-        let Some(raw) = &c.raw else { continue };
-        if total == SAMPLE {
-            break;
-        }
-        total += 1;
-        let got = mt.pieces(&c.src, li_mt::chunk::Marks::Heard).unwrap();
-        assert_eq!(got.len(), 1, "no split was asked for: {:?}", c.src);
-        if &got[0] == raw {
-            same += 1;
-        } else {
-            eprintln!("differs: {:?}\n  py {raw:?}\n  rs {:?}", c.src, got[0]);
-        }
-    }
-    let agreement = same as f64 / total as f64;
-    eprintln!(
-        "reproduced {same}/{total} prototype lines ({:.0}%)",
-        100.0 * agreement
-    );
-    assert!(
-        agreement >= 0.6,
-        "only {same}/{total} lines reproduced the prototype"
-    );
+
+    let got = mt
+        .translate_blocking("Hello everybody.", li_mt::chunk::Marks::Heard)
+        .unwrap();
+
+    assert!(!got.contains("您的位置"), "{got}");
+}
+
+/// "Oh, well." has a real word in it, so the interjection table does not
+/// catch it, and asked for `zho_Hant` NLLB answered 沒有任何問題 ("no problem
+/// at all") -- a sentence nobody said.
+#[test]
+fn a_shrug_is_not_translated_into_no_problem_at_all() {
+    let Some(dir) = model_dir() else {
+        eprintln!("skipped: no MT model; set LI_MT_MODEL_DIR");
+        return;
+    };
+    let mt = LocalNllb::open(&NllbConfig {
+        model_dir: dir,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let got = mt
+        .translate_blocking("Oh, well.", li_mt::chunk::Marks::Heard)
+        .unwrap();
+
+    assert!(!got.contains("沒有任何問題"), "{got}");
 }
 
 /// Alone, "Mm-hmm." came back from the model as 沒有任何問題。 ("no problem at

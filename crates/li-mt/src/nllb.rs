@@ -31,9 +31,17 @@ use crate::{Translator, chunk, chunk::Marks, filler, zh::Zh};
 
 /// NLLB's own name for English.
 const SRC_LANG: &str = "eng_Latn";
-/// NLLB's own name for Traditional Chinese. Which flavour of Traditional is not
-/// something it can be told; [`Zh`] settles that afterwards.
-const TGT_LANG: &str = "zho_Hant";
+/// NLLB's own name for **Simplified** Chinese, although the product writes
+/// Traditional: [`Zh`] converts the characters and the vocabulary afterwards.
+///
+/// Asking for `zho_Hant` directly was worse on every count. Over 109 real
+/// lines (72 from meetings, 37 read aloud, 2026-09-24), switching to
+/// `zho_Hans` took the lines left hanging on a comma from 23 to 7, the
+/// web-page boilerplate NLLB falls back on for short input (您的位置: 首頁,
+/// 沒有任何問題) from 20 to 2, and chrF on the read clips from 16.9 to 19.1.
+/// Its Traditional training data is the smaller and noisier half. The cost
+/// is a longer decode: about 30% more time a line.
+const TGT_LANG: &str = "zho_Hans";
 const EOS: &str = "</s>";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,8 +265,8 @@ impl Translator for LocalNllb {
         self.translate_blocking(src, Marks::Heard)
     }
 
-    /// `zho_Hant` is Traditional characters with Mainland vocabulary, so this
-    /// backend converts its own output and answers `true`. See [`Zh`].
+    /// The model writes Simplified Chinese, so this backend converts its own
+    /// output and answers `true`. See [`Zh`].
     fn target_is_zh_tw(&self) -> bool {
         true
     }
