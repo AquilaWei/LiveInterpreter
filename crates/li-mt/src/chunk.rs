@@ -171,7 +171,11 @@ fn push_run<'a>(out: &mut Vec<&'a str>, piece: &'a str, run_words: usize) {
 /// Byte ranges of `s` between marks, trimmed, with empties dropped.
 ///
 /// A mark only ends a piece when whitespace or the end of the string follows
-/// it, so "3.5 seconds" and "Or we can..." stay in one piece.
+/// it, so "3.5 seconds" and "Or we can..." stay in one piece. Nor does a full
+/// stop with another one after the space: whisper writes a pause as
+/// ". . .", and cutting there made every dot a sentence of its own, which
+/// NLLB translated as 沒有人知道 ("nobody knows") -- fifteen lines of it in
+/// one 57-minute meeting (2026-09-23).
 fn ranges(s: &str, marks: &[char]) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -184,6 +188,9 @@ fn ranges(s: &str, marks: &[char]) -> Vec<Range<usize>> {
             continue;
         };
         if !ch.is_whitespace() {
+            continue;
+        }
+        if c == '.' && s[next..].trim_start().starts_with('.') {
             continue;
         }
         push_trimmed(&mut out, s, start..next);
@@ -204,6 +211,43 @@ fn push_trimmed(out: &mut Vec<Range<usize>>, s: &str, r: Range<usize>) {
 
 fn words(s: &str) -> usize {
     s.split_whitespace().count()
+}
+
+/// Whisper's spaced pause, ". . .", as the "..." NLLB has seen written.
+///
+/// [`split`] already keeps the dots in one piece; this is what the model is
+/// handed. Left spaced, each dot is a token of its own at the end of a
+/// sentence, which is where NLLB reaches for boilerplate.
+pub fn collapse_spaced_ellipsis(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('.') {
+        let (head, tail) = rest.split_at(i);
+        let mut dots = 0;
+        let mut after = tail;
+        while let Some(t) = after.strip_prefix('.') {
+            dots += 1;
+            let spaced = t.trim_start();
+            after = if spaced.starts_with('.') { spaced } else { t };
+        }
+        if dots >= 2 {
+            out.push_str(head.trim_end());
+            out.push_str("...");
+        } else {
+            out.push_str(head);
+            out.push('.');
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// True for a piece with no letter or digit in it -- whisper's ". . . . ."
+/// for a silence, a lone dash. There is nothing to translate, and handed one,
+/// NLLB translates it anyway.
+pub fn is_only_marks(piece: &str) -> bool {
+    !piece.chars().any(char::is_alphanumeric)
 }
 
 /// NLLB's most reproducible single failure: a source ending in a full stop
@@ -323,6 +367,40 @@ mod tests {
             split("Or we can... maybe not.", 6, 0),
             ["Or we can...", "maybe not."]
         );
+    }
+
+    #[test]
+    fn a_spaced_ellipsis_ends_one_piece_rather_than_making_each_dot_a_sentence() {
+        assert_eq!(
+            split("Uh . . . Oh, we also . . .", 6, 0),
+            ["Uh . . .", "Oh, we also . . ."]
+        );
+    }
+
+    #[test]
+    fn a_spaced_ellipsis_is_handed_over_as_three_dots() {
+        assert_eq!(
+            collapse_spaced_ellipsis("Oh, we also . . ."),
+            "Oh, we also..."
+        );
+    }
+
+    #[test]
+    fn a_full_stop_and_a_decimal_point_are_not_an_ellipsis() {
+        assert_eq!(
+            collapse_spaced_ellipsis("It costs 3.5 million. Next."),
+            "It costs 3.5 million. Next."
+        );
+    }
+
+    #[test]
+    fn a_silence_written_as_dots_is_only_marks() {
+        assert!(is_only_marks(". . . . . ."));
+    }
+
+    #[test]
+    fn a_piece_with_a_word_in_it_is_not_only_marks() {
+        assert!(!is_only_marks("Uh . . ."));
     }
 
     #[test]
