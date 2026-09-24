@@ -156,6 +156,58 @@ fn a_shrug_is_not_translated_into_no_problem_at_all() {
     assert!(!got.contains("沒有任何問題"), "{got}");
 }
 
+/// Whisper writes a silence as a row of spaced dots, and each dot used to reach
+/// the model as a sentence of its own: 沒有人知道 ("nobody knows"), once per
+/// dot, fifteen lines of it in one meeting.
+#[test]
+fn a_silence_written_as_dots_is_not_translated_into_words() {
+    let Some(dir) = model_dir() else {
+        eprintln!("skipped: no MT model; set LI_MT_MODEL_DIR");
+        return;
+    };
+    let mt = LocalNllb::open(&NllbConfig {
+        model_dir: dir,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let got = mt
+        .translate_blocking(". . . . . .", li_mt::chunk::Marks::Heard)
+        .unwrap();
+
+    assert_eq!(got, "……");
+}
+
+/// The same dots inside a sentence: the pause is kept, and nothing is
+/// invented for it. Before, each dot came back as a sentence of its own --
+/// 沒有人知道 when NLLB was asked for Traditional, 讓我們一起去 ("let's go
+/// together") since it is asked for Simplified -- so what is pinned is the
+/// text around the dots, not the absence of any one invention.
+#[test]
+fn a_pause_inside_a_sentence_is_not_translated_into_words() {
+    let Some(dir) = model_dir() else {
+        eprintln!("skipped: no MT model; set LI_MT_MODEL_DIR");
+        return;
+    };
+    let mt = LocalNllb::open(&NllbConfig {
+        model_dir: dir,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let got = mt
+        .translate_blocking(
+            "Other logistics? Uh . . . Oh, we also . . . we also are bringing up treat times.",
+            li_mt::chunk::Marks::Heard,
+        )
+        .unwrap();
+
+    // Only the part the dots were in is pinned: the last clause's wording
+    // differs between a debug and a release build of CTranslate2 (提及 against
+    // 提到), which is rounding, not this.
+    assert!(got.starts_with("其他物流？呃我們也……"), "{got}");
+}
+
 /// Alone, "Mm-hmm." came back from the model as 沒有任何問題。 ("no problem at
 /// all"), 18 times in one 24-minute conversation. It must not reach the model.
 #[test]

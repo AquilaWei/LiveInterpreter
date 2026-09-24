@@ -203,8 +203,19 @@ impl LocalNllb {
     pub fn pieces(&self, src: &str, marks: Marks) -> Result<Vec<String>> {
         let pieces = chunk::split(src, self.cfg.max_chunk_words, self.cfg.max_run_words, marks);
         // "Mm-hmm." alone comes back from the model as 沒有任何問題; see
-        // `filler`. Those clauses never reach it, the rest go as one batch.
-        let mut out: Vec<Option<String>> = pieces.iter().map(|p| filler::render(p)).collect();
+        // `filler`. Those clauses never reach it, and neither does a piece
+        // with no words in it at all, which is written as the pause it was.
+        // The rest go as one batch.
+        let mut out: Vec<Option<String>> = pieces
+            .iter()
+            .map(|p| {
+                if chunk::is_only_marks(p) {
+                    Some("...".to_string())
+                } else {
+                    filler::render(p)
+                }
+            })
+            .collect();
         let rest: Vec<&str> = pieces
             .iter()
             .zip(&out)
@@ -226,10 +237,11 @@ impl LocalNllb {
         let source = pieces
             .iter()
             .map(|p| {
+                let p = chunk::collapse_spaced_ellipsis(p);
                 self.encode(if self.cfg.trim_final_stop {
-                    chunk::trim_final_stop(p)
+                    chunk::trim_final_stop(&p)
                 } else {
-                    p
+                    &p
                 })
             })
             .collect::<Result<Vec<_>>>()?;
