@@ -155,7 +155,9 @@ function translate(lineId, text, settled) {
 
 // One element per kept translation, always all of them: an empty row still
 // reserves its height, so the bar does not grow and shrink as the first few
-// lines of a session arrive. The newest is the last row.
+// lines of a session arrive. The newest is the first row, right under the
+// English it translates; the older ones move down, and an empty row is at the
+// bottom.
 function paintTranslations() {
   while (targets.children.length < keep) {
     const row = document.createElement("div");
@@ -164,12 +166,12 @@ function paintTranslations() {
   }
   while (targets.children.length > keep) targets.firstChild.remove();
   const rows = [...targets.children];
-  const offset = keep - recent.length;
   rows.forEach((row, i) => {
-    const t = i >= offset ? translations.get(recent[i - offset]) : null;
+    const id = recent[recent.length - 1 - i];
+    const t = id === undefined ? null : translations.get(id);
     row.textContent = t ? t.text : "";
     row.classList.toggle("tentative", Boolean(t) && !t.settled);
-    row.classList.toggle("older", i < keep - 1);
+    row.classList.toggle("older", i > 0);
   });
   fit();
 }
