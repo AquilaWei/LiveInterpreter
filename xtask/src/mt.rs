@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! cargo xtask mt --lines <src.txt> [--ref <zh.txt>] [--beam N] [--chunk N] [--run N] [--no-trim]
+//!                 [--fallback <opus-mt dir>]
 //! ```
 //!
 //! The input is one finalised source line per line: exactly what `li-stream`
@@ -57,6 +58,7 @@ pub fn parse(mut args: impl Iterator<Item = String>) -> Result<Args> {
             "--ref" => reference = Some(PathBuf::from(val()?)),
             "--out" => out = Some(PathBuf::from(val()?)),
             "--model" => cfg.model_dir = PathBuf::from(val()?),
+            "--fallback" => cfg.fallback_model_dir = Some(PathBuf::from(val()?)),
             "--beam" => cfg.beam_size = val()?.parse()?,
             "--chunk" => cfg.max_chunk_words = val()?.parse()?,
             "--run" => cfg.max_run_words = val()?.parse()?,

@@ -331,6 +331,10 @@ fn promote_after_s() -> f64 {
 pub struct MtCfg {
     pub backend: String,
     pub model: String,
+    /// A second translator, asked only for a piece NLLB could not write a
+    /// character of (`li_mt::opus`). Optional the way the punctuation model is:
+    /// not in the cache, and the gap is marked □ instead. Empty turns it off.
+    pub fallback_model: String,
     pub target: String,
     /// Only a cloud/LLM backend can use these; the local NLLB is measurably
     /// harmed by them and ignores the setting.
@@ -446,6 +450,7 @@ impl Default for MtCfg {
         Self {
             backend: "local".into(),
             model: "nllb-200-distilled-600m-ct2-int8".into(),
+            fallback_model: "opus-mt-en-zh-ct2-int8".into(),
             target: "zh-Hant-TW".into(),
             context_sentences: 2,
             opencc: "s2twp".into(),
@@ -598,8 +603,22 @@ impl MtCfg {
             max_chunk_words: self.max_chunk_words,
             max_run_words: self.max_run_words,
             trim_final_stop: self.trim_final_stop,
+            fallback_model_dir: self.fallback_dir(models),
             ..Default::default()
         })
+    }
+
+    fn fallback_dir(&self, models: &Models) -> Option<PathBuf> {
+        if self.fallback_model.is_empty() {
+            return None;
+        }
+        match models.resolve(Kind::Mt, &self.fallback_model) {
+            Ok(dir) => Some(dir),
+            Err(e) => {
+                tracing::info!("translation fallback: off ({e:#})");
+                None
+            }
+        }
     }
 }
 

@@ -27,7 +27,7 @@ use ct2rs::sys::{ComputeType, Config, Device, TranslationOptions, Translator as 
 use serde::{Deserialize, Serialize};
 use tokenizers::Tokenizer;
 
-use crate::{Translator, chunk, chunk::Marks, filler, zh::Zh};
+use crate::{Translator, chunk, chunk::Marks, filler, opus::LocalOpus, zh::Zh};
 
 /// NLLB's own name for English.
 const SRC_LANG: &str = "eng_Latn";
@@ -43,6 +43,15 @@ const SRC_LANG: &str = "eng_Latn";
 /// is a longer decode: about 30% more time a line.
 const TGT_LANG: &str = "zho_Hans";
 const EOS: &str = "</s>";
+const UNK: &str = "<unk>";
+
+/// Written where a character should be and neither model could write it.
+///
+/// The box is what a reader already knows as "a character belongs here": it
+/// is how a missing glyph renders. Dropping the character instead, which is
+/// what decoding did until 1.3.9, turned 反饋 into 反 and 法學碩士 into
+/// 法學士 -- a wrong word in place of an obviously missing one.
+pub const MISSING: &str = "□";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -78,6 +87,11 @@ pub struct NllbConfig {
     /// moved +1.9 and -1.5, and more lines ended mid-clause. A knob, not a
     /// default; the case it fixes is a short line padded into a hallucination.
     pub trim_final_stop: bool,
+    /// Opus-MT, asked for a piece NLLB could not write a character of (see
+    /// [`crate::opus`]). `None`, or a directory with no model in it, leaves
+    /// NLLB on its own and the gap marked with [`MISSING`]: the model is a
+    /// separate 80 MB download, and the app must still run without it.
+    pub fallback_model_dir: Option<PathBuf>,
 }
 
 impl Default for NllbConfig {
@@ -91,6 +105,7 @@ impl Default for NllbConfig {
             max_input_tokens: 200,
             max_decoding_length: 256,
             trim_final_stop: false,
+            fallback_model_dir: None,
         }
     }
 }
@@ -106,7 +121,15 @@ pub struct LocalNllb {
     tok: Tokenizer,
     ct2: Ct2,
     zh: Zh,
+    fallback: Option<LocalOpus>,
     cfg: NllbConfig,
+}
+
+/// One piece as NLLB decoded it.
+struct Decoded {
+    /// With [`MISSING`] where the model emitted `<unk>`.
+    text: String,
+    missing: bool,
 }
 
 impl LocalNllb {
@@ -143,10 +166,24 @@ impl LocalNllb {
             cfg.threads,
             cfg.beam_size
         );
+        let fallback = match &cfg.fallback_model_dir {
+            Some(dir) if dir.join("model.bin").is_file() => {
+                Some(LocalOpus::open(dir, cfg.threads)?)
+            }
+            Some(dir) => {
+                tracing::warn!(
+                    "MT fallback not installed ({}): a character NLLB cannot write shows as {MISSING}",
+                    dir.display()
+                );
+                None
+            }
+            None => None,
+        };
         Ok(Self {
             tok,
             ct2,
             zh: Zh::new()?,
+            fallback,
             cfg: cfg.clone(),
         })
     }
@@ -169,21 +206,27 @@ impl LocalNllb {
         Ok(out)
     }
 
-    fn decode(&self, hyp: &[String]) -> Result<String> {
+    /// The hypothesis as text, with [`MISSING`] for each `<unk>`.
+    ///
+    /// The tokenizer's own decode drops `<unk>` as a special token, which is
+    /// how a character NLLB has no piece for used to disappear without a
+    /// trace. So the runs between them are decoded separately.
+    fn decode(&self, hyp: &[String]) -> Result<Decoded> {
         let body = match hyp.split_first() {
             Some((first, rest)) if first == TGT_LANG => rest,
             _ => hyp,
         };
-        let ids: Vec<u32> = body
-            .iter()
-            .filter_map(|t| self.tok.token_to_id(t))
-            .collect();
-        Ok(self
-            .tok
-            .decode(&ids, true)
-            .map_err(|e| anyhow!("{e}"))?
-            .trim()
-            .to_string())
+        let runs = body
+            .split(|t| t == UNK)
+            .map(|run| {
+                let ids: Vec<u32> = run.iter().filter_map(|t| self.tok.token_to_id(t)).collect();
+                self.tok.decode(&ids, true).map_err(|e| anyhow!("{e}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Decoded {
+            text: runs.join(MISSING).trim().to_string(),
+            missing: runs.len() > 1,
+        })
     }
 
     /// One blocking pass. `li-core` runs this on a blocking thread.
@@ -222,15 +265,32 @@ impl LocalNllb {
             .filter(|(_, done)| done.is_none())
             .map(|(p, _)| *p)
             .collect();
-        let mut translated = self.model(&rest)?.into_iter();
+        let mut translated = self.model(&rest)?.into_iter().zip(rest);
         for slot in out.iter_mut().filter(|s| s.is_none()) {
-            *slot = translated.next();
+            if let Some((decoded, piece)) = translated.next() {
+                *slot = Some(self.fill_missing(decoded, piece)?);
+            }
         }
         Ok(out.into_iter().flatten().collect())
     }
 
+    /// NLLB's translation, unless it has a character missing and the fallback
+    /// can write the piece whole. Asked for one piece at a time, and only for
+    /// those: 21 missing characters over 109 real lines (2026-09-24).
+    fn fill_missing(&self, decoded: Decoded, piece: &str) -> Result<String> {
+        if !decoded.missing {
+            return Ok(decoded.text);
+        }
+        let Some(opus) = &self.fallback else {
+            return Ok(decoded.text);
+        };
+        Ok(opus
+            .translate(&chunk::collapse_spaced_ellipsis(piece))?
+            .unwrap_or(decoded.text))
+    }
+
     /// The pieces through CTranslate2 in one batch, one output per piece.
-    fn model(&self, pieces: &[&str]) -> Result<Vec<String>> {
+    fn model(&self, pieces: &[&str]) -> Result<Vec<Decoded>> {
         if pieces.is_empty() {
             return Ok(Vec::new());
         }

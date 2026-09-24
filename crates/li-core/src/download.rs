@@ -154,8 +154,9 @@ pub enum Progress {
 ///
 /// The degraded accurate-lane model is not in this list unless the config asks
 /// for it, so a machine with a GPU never fetches the 57 MB fallback. The
-/// punctuation model is included: it is optional at run time, but someone who
-/// is downloading anyway should not have to come back for it.
+/// punctuation model and the fallback translator are included: both are
+/// optional at run time, but someone who is downloading anyway should not have
+/// to come back for them.
 fn wanted(cfg: &EngineConfig) -> Vec<(Kind, String)> {
     let mut v = Vec::new();
     // Both lanes are optional in the config (`LaneMode::FastOnly` and
@@ -171,6 +172,9 @@ fn wanted(cfg: &EngineConfig) -> Vec<(Kind, String)> {
         v.push((Kind::Accurate, accurate.model.clone()));
     }
     v.push((Kind::Mt, cfg.mt.model.clone()));
+    if !cfg.mt.fallback_model.is_empty() {
+        v.push((Kind::Mt, cfg.mt.fallback_model.clone()));
+    }
     v
 }
 
@@ -519,7 +523,11 @@ mod tests {
         let dir = tempdir();
         let models = Models::with_root(&dir);
         let p = plan(&models, &cfg()).unwrap();
-        assert_eq!(p.models().len(), 4, "fast, accurate, mt, punct");
+        assert_eq!(
+            p.models().len(),
+            5,
+            "fast, accurate, mt, mt fallback, punct"
+        );
         assert!(p.total_bytes > 900 * 1024 * 1024, "{}", p.total_bytes);
 
         // Now satisfy every one of them and ask again.
@@ -632,6 +640,22 @@ mod tests {
         let degraded = plan(&Models::with_root(&dir), &c).unwrap();
         assert!(degraded.models().contains(&"base.en-q5_1"));
         assert!(!degraded.models().contains(&"small.en-q5_1"));
+    }
+
+    #[test]
+    fn the_fallback_translator_is_fetched_with_the_rest() {
+        let dir = tempdir();
+        let p = plan(&Models::with_root(&dir), &cfg()).unwrap();
+        assert!(p.models().contains(&"opus-mt-en-zh-ct2-int8"));
+    }
+
+    #[test]
+    fn a_fallback_translator_turned_off_is_not_fetched() {
+        let dir = tempdir();
+        let mut c = cfg();
+        c.mt.fallback_model = String::new();
+        let p = plan(&Models::with_root(&dir), &c).unwrap();
+        assert!(!p.models().contains(&"opus-mt-en-zh-ct2-int8"));
     }
 
     #[test]

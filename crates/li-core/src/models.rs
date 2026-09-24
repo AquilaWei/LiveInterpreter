@@ -17,6 +17,7 @@
 //! | punctuation | `online-punct-en-2024-08-06` | `sherpa-onnx-<id>/` (the same convention: it is a sherpa release too) |
 //! | accurate lane | `small.en-q5_1` | `ggml/ggml-<id>.bin` |
 //! | MT | `nllb-200-distilled-600m-ct2-int8` | `<id>/` |
+//! | MT fallback | `opus-mt-en-zh-ct2-int8` | `<id>/` (the same convention: resolved as MT) |
 //!
 //! An id that is already a path -- absolute, or containing a separator -- is
 //! taken as one and left alone, so a model outside the cache needs no
