@@ -29,7 +29,7 @@ const $ = (id) => document.getElementById(id);
 // beside a range shows the value, so the slider is not a mystery.
 const UI_NUMBERS = [
   "font_size", "opacity", "width_pct", "margin_px",
-  "source_rows", "target_rows", "min_dwell_ms",
+  "source_rows", "target_rows", "target_lines", "min_dwell_ms",
 ];
 const UI_FLAGS = ["show_source", "click_through"];
 const FORMATS = ["txt", "jsonl", "srt", "vtt"];

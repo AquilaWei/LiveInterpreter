@@ -57,6 +57,10 @@ jobs:
           echo "LD_LIBRARY_PATH=$(dirname "$(find ~/.cache/sherpa-rs
           -name libsherpa-onnx-c-api.so -print -quit)")" >> "$GITHUB_ENV"
       - run: cargo test --workspace --no-default-features
+      # The bar's own logic (which translations stay on screen) is plain
+      # JavaScript with no window in it, so node checks it directly. Node is
+      # on ubuntu-latest; nothing is installed for it.
+      - run: node --test apps/desktop/ui/*.test.mjs
 
   # Windows is on hold, and this job has never run on a real
   # Windows runner. Commented out rather than deleted so it comes back

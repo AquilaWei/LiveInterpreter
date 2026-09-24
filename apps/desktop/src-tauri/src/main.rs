@@ -683,7 +683,8 @@ fn estimate_height(ui: &UiCfg) -> f64 {
     const PADDING: f64 = 22.0; // 10 px each side, plus the gap between the rows
     const LINE: f64 = 1.35; // the rows' `line-height`
     const SOURCE: f64 = 0.8; // ...and the source row's smaller `font-size`
-    let rows = SOURCE * ui.source_rows.max(1) as f64 + 1.0;
+    // Every translation kept on the bar reserves a row, empty or not.
+    let rows = SOURCE * ui.source_rows.max(1) as f64 + ui.target_lines.max(1) as f64;
     PADDING + (ui.font_size * LINE * rows).round()
 }
 
