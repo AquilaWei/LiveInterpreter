@@ -263,6 +263,22 @@ impl Speculation {
 /// sighting gives up 0.32-1.6 s of a 1.9-3.5 s head start. Cheap insurance.
 const CONFIRM_RUNS: u32 = 2;
 
+/// How many new words a comma needs in front of it before [`EarlyCut`] sends
+/// the prefix up to it.
+///
+/// A full stop alone left long sentences waiting: a speaker who runs a
+/// 40-word sentence without a pause got no Chinese until the line closed, 11 s
+/// after its first word on the meeting clip. A comma is where the sentence can
+/// be translated in part, but not every comma -- `So, we` is not worth a pass,
+/// so the words since the last send must reach this many.
+///
+/// Measured over three clips (meeting, and two readings at 1.5x), share of
+/// words that waited over 5 s for their first Chinese, off / 10 / 8 / 6:
+/// 12.3 / 5.0 / 5.0 / 2.7 %, 26.4 / 14.1 / 9.8 / 5.5 %, 8.7 / 6.1 / 6.1 / 4.3 %.
+/// The settled translation's delay did not move (median within 0.05 s); the
+/// cost is a draft replaced more often, 57 -> 65 on 116 s of meeting.
+const CLAUSE_WORDS: usize = 6;
+
 /// Translate a sentence that has ended, without waiting for the line to.
 ///
 /// [`Speculation`] is early by one endpoint: it uses the silence that closes a
@@ -320,7 +336,9 @@ impl EarlyCut {
             .iter()
             .enumerate()
             .take(words.len().saturating_sub(1))
-            .filter(|(_, w)| ends_sentence(w))
+            .filter(|(i, w)| {
+                ends_sentence(w) || (ends_clause(w) && i + 1 >= self.sent_words + CLAUSE_WORDS)
+            })
             .map(|(i, _)| i)
             .collect();
         self.seen.retain(|i, _| ends.contains(i));
@@ -381,6 +399,14 @@ impl EarlyCut {
 fn ends_sentence(w: &str) -> bool {
     w.trim_end_matches(['"', '\'', ')', ']', '\u{201d}'])
         .ends_with(['.', '!', '?'])
+}
+
+/// Does this word end a clause -- a comma, semicolon or colon?
+///
+/// Only the policy in [`CLAUSE_WORDS`] makes one worth a translation.
+fn ends_clause(w: &str) -> bool {
+    w.trim_end_matches(['"', '\'', ')', ']', '\u{201d}'])
+        .ends_with([',', ';', ':'])
 }
 
 /// The two things watching a line that is still open: one waits for the words
@@ -1831,6 +1857,30 @@ mod tests {
             .map(|j| j.line_id)
             .collect();
         assert_eq!(sent, [1, 2], "the same words on a new line are new words");
+    }
+
+    #[test]
+    fn a_long_clause_is_translated_before_its_sentence_ends() {
+        // A speaker running one long sentence with no full stop: the comma
+        // after six words is where the reader gets the first Chinese.
+        let (o, _sink, mut mt) = out(true);
+        assert_eq!(
+            early(
+                &o,
+                &mut mt,
+                &[
+                    "When we tested the new mapping pipeline, the",
+                    "When we tested the new mapping pipeline, the robot",
+                ],
+            ),
+            ["When we tested the new mapping pipeline,"]
+        );
+    }
+
+    #[test]
+    fn a_short_clause_waits_for_more() {
+        let (o, _sink, mut mt) = out(true);
+        assert!(early(&o, &mut mt, &["So, we", "So, we tested"]).is_empty());
     }
 
     #[test]
