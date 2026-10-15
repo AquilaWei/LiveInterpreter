@@ -17,6 +17,14 @@
 
 ---
 
+## 1.3.14 — 2026-10-15
+
+**修正：刪掉建置資料夾後，已安裝的 Flatpak 就沒辦法更新。** `scripts/flatpak.sh` 以前把
+Flatpak 的本地 repo 和編譯快取都放在 `target/flatpak/`，裝好的 app 也從那裡登記更新來源，
+所以只要 `cargo clean` 或刪掉專案資料夾，`flatpak update` 就會失敗，下次建置還得把
+whisper.cpp、CTranslate2、oneDNN 全部重編一次。現在這些都改放在
+`~/.cache/liveinterpreter-flatpak/`，清建置產物或刪掉專案都不受影響。程式本身沒有改動。
+
 ## 1.3.13 — 2026-09-25
 
 **調整：長句講到逗號就先翻。** 以前要等到句號或停頓才開始翻，講者一口氣說一長句時，英文
