@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Flatpak. Output: target/flatpak/LiveInterpreter.flatpak
+# Build the Flatpak. Output: ~/.cache/liveinterpreter-flatpak/LiveInterpreter.flatpak
 #
 #   scripts/flatpak.sh              # build, install --user, write the bundle
 #   scripts/flatpak.sh --no-bundle  # build and install only
@@ -11,16 +11,19 @@
 # flatpak-builder is not installed on the host and does not need to be -- it
 # ships as a flatpak of its own (org.flatpak.Builder), which is what this runs.
 #
-# Everything lands under target/, and that matters: the manifest's `dir` source
-# copies the repository, skipping `target`. A build directory anywhere else in
-# the tree would copy itself.
+# Everything lands outside the repository, for two reasons. The manifest's `dir`
+# source copies the repository (skipping only `target`), so a build directory
+# inside the tree would copy itself. And `--install` registers `$OUT/repo` as
+# the app's flatpak remote: under target/, `cargo clean` or deleting the
+# checkout took the remote and the ccache in `state/` with it, leaving an
+# installed app that `flatpak update` could no longer reach.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ID="io.github.AquilaWei.LiveInterpreter"
 MANIFEST_DIR="$REPO/packaging/flatpak"
 MANIFEST="$MANIFEST_DIR/$ID.yml"
-OUT="$REPO/target/flatpak"
+OUT="${XDG_CACHE_HOME:-$HOME/.cache}/liveinterpreter-flatpak"
 
 bundle=1
 if [ "${1:-}" = "--no-bundle" ]; then bundle=0; shift; fi

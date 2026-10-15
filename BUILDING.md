@@ -184,7 +184,15 @@ scripts/flatpak.sh --no-bundle  # build and install only
 
 `flatpak-builder` does not have to be installed: the script runs
 `org.flatpak.Builder`, which is itself a flatpak. The first run downloads about
-1.5 GB of SDK:
+1.5 GB of SDK.
+
+Output goes to `~/.cache/liveinterpreter-flatpak/` (`$XDG_CACHE_HOME` if set),
+not `target/`: `--install` registers `repo/` there as the app's flatpak remote,
+and `state/` holds the ccache that keeps whisper.cpp, CTranslate2 and oneDNN
+from compiling from scratch. Both now survive `cargo clean` and deleting the
+checkout. The bundle is `~/.cache/liveinterpreter-flatpak/LiveInterpreter.flatpak`.
+
+The SDK:
 
 | | |
 |---|---|

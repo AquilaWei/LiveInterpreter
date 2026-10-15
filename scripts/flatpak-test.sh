@@ -17,7 +17,8 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ID=io.github.AquilaWei.LiveInterpreter
-OUT="$REPO/target/flatpak"
+# Must match scripts/flatpak.sh, which writes the bundle there.
+OUT="${XDG_CACHE_HOME:-$HOME/.cache}/liveinterpreter-flatpak"
 DIR="$REPO/packaging/flatpak/test"
 IMAGE=li-flatpak-test
 VOLUME=li-fp-cache
